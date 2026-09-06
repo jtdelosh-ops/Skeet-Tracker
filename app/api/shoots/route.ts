@@ -1,8 +1,216 @@
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { eventScores, shoots } from "../../../db/schema";
-const seed=[[161797,"2024-04-07","Pig Pickin",92,97,97,95,89],[166096,"2024-06-02","Tildon Downing Challenge",98,99,98,97,92],[166240,"2024-06-23","Kolar US Open",99,96,98,92,89],[166116,"2024-07-14","Paratrooper Open",98,97,97,95,null],[166117,"2024-09-08","North Carolina State Skeet",98,98,97,95,89],[166527,"2024-10-06","Portsmouth Langley Open",99,97,97,96,null],[167638,"2024-11-17","Autumn Open",90,97,99,91,null],[167838,"2025-04-06","Pig Pickin",94,97,91,93,90],[168761,"2025-06-01","Tildon Downing Challenge",92,97,98,94,92],[167601,"2025-06-22","Kolar US Open",93,97,96,92,null],[168948,"2025-07-13","Firecracker 400",100,100,99,89,null],[169053,"2025-08-10","Zone 4 iShoot Championships",91,96,98,94,87],[167769,"2025-09-07","North Carolina State Open",98,95,98,95,91],[170795,"2026-08-09","Zone 4 Skeet Championships iShoot",95,96,98,96,null]] as const;
-const events=["12","20","28","410","doubles"] as const;
-async function ensureSeeded(){const db=getDb();if((await db.select({id:shoots.id}).from(shoots).limit(1)).length)return;for(const row of seed){const [shoot]=await db.insert(shoots).values({shootNumber:row[0],date:row[1],name:row[2]}).returning();const values=events.flatMap((event,i)=>row[i+3]==null?[]:[{shootId:shoot.id,event,broken:row[i+3] as number,targets:100,sequence:i,label:"Main"}]);await db.insert(eventScores).values(values)}}
-export async function GET(){try{await ensureSeeded();const db=getDb();const rows=await db.select().from(shoots).orderBy(asc(shoots.date),asc(shoots.id));return Response.json({shoots:await Promise.all(rows.map(async shoot=>({...shoot,scores:await db.select().from(eventScores).where(eq(eventScores.shootId,shoot.id)).orderBy(asc(eventScores.sequence),asc(eventScores.id))})))});}catch(e){return Response.json({error:e instanceof Error?e.message:"Unable to load shoots"},{status:500})}}
-export async function POST(request:Request){try{const body=await request.json() as {name:string;date:string;entries:{event:string;broken:number;targets:number;label?:string}[]};if(!body.name?.trim()||!body.date)return Response.json({error:"Shoot name and date are required"},{status:400});const entries=(body.entries??[]).filter(x=>events.includes(x.event as typeof events[number])&&Number.isInteger(x.broken)&&Number.isInteger(x.targets)&&x.broken>=0&&x.targets>0&&x.broken<=x.targets);if(!entries.length)return Response.json({error:"Add at least one valid event"},{status:400});const db=getDb();const [shoot]=await db.insert(shoots).values({name:body.name.trim(),date:body.date}).returning();await db.insert(eventScores).values(entries.map((x,i)=>({shootId:shoot.id,event:x.event as typeof events[number],broken:x.broken,targets:x.targets,sequence:i,label:x.label?.trim()||"Main"})));return Response.json({shoot},{status:201})}catch(e){return Response.json({error:e instanceof Error?e.message:"Unable to save shoot"},{status:500})}}
+const seed = [
+  [161797, "2024-04-07", "Pig Pickin", 92, 97, 97, 95, 89],
+  [166096, "2024-06-02", "Tildon Downing Challenge", 98, 99, 98, 97, 92],
+  [166240, "2024-06-23", "Kolar US Open", 99, 96, 98, 92, 89],
+  [166116, "2024-07-14", "Paratrooper Open", 98, 97, 97, 95, null],
+  [166117, "2024-09-08", "North Carolina State Skeet", 98, 98, 97, 95, 89],
+  [166527, "2024-10-06", "Portsmouth Langley Open", 99, 97, 97, 96, null],
+  [167638, "2024-11-17", "Autumn Open", 90, 97, 99, 91, null],
+  [167838, "2025-04-06", "Pig Pickin", 94, 97, 91, 93, 90],
+  [168761, "2025-06-01", "Tildon Downing Challenge", 92, 97, 98, 94, 92],
+  [167601, "2025-06-22", "Kolar US Open", 93, 97, 96, 92, null],
+  [168948, "2025-07-13", "Firecracker 400", 100, 100, 99, 89, null],
+  [169053, "2025-08-10", "Zone 4 iShoot Championships", 91, 96, 98, 94, 87],
+  [167769, "2025-09-07", "North Carolina State Open", 98, 95, 98, 95, 91],
+  [
+    170795,
+    "2026-08-09",
+    "Zone 4 Skeet Championships iShoot",
+    95,
+    96,
+    98,
+    96,
+    null,
+  ],
+] as const;
+const events = ["12", "20", "28", "410", "doubles"] as const;
+async function ensureSeeded() {
+  const db = getDb();
+  if ((await db.select({ id: shoots.id }).from(shoots).limit(1)).length) return;
+  for (const row of seed) {
+    const [shoot] = await db
+      .insert(shoots)
+      .values({ shootNumber: row[0], date: row[1], name: row[2] })
+      .returning();
+    const values = events.flatMap((event, i) =>
+      row[i + 3] == null
+        ? []
+        : [
+            {
+              shootId: shoot.id,
+              event,
+              broken: row[i + 3] as number,
+              targets: 100,
+              sequence: i,
+              label: "Main",
+            },
+          ],
+    );
+    await db.insert(eventScores).values(values);
+  }
+}
+export async function GET() {
+  try {
+    await ensureSeeded();
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(shoots)
+      .orderBy(asc(shoots.date), asc(shoots.id));
+    return Response.json({
+      shoots: await Promise.all(
+        rows.map(async (shoot) => ({
+          ...shoot,
+          scores: await db
+            .select()
+            .from(eventScores)
+            .where(eq(eventScores.shootId, shoot.id))
+            .orderBy(asc(eventScores.sequence), asc(eventScores.id)),
+        })),
+      ),
+    });
+  } catch (e) {
+    return Response.json(
+      { error: e instanceof Error ? e.message : "Unable to load shoots" },
+      { status: 500 },
+    );
+  }
+}
+export async function POST(request: Request) {
+  try {
+    const body = (await request.json()) as {
+      name: string;
+      date: string;
+      entries: {
+        event: string;
+        broken: number;
+        targets: number;
+        label?: string;
+        classShot?: string;
+      }[];
+    };
+    if (!body.name?.trim() || !body.date)
+      return Response.json(
+        { error: "Shoot name and date are required" },
+        { status: 400 },
+      );
+    const entries = (body.entries ?? []).filter(
+      (x) =>
+        events.includes(x.event as (typeof events)[number]) &&
+        Number.isInteger(x.broken) &&
+        Number.isInteger(x.targets) &&
+        x.broken >= 0 &&
+        x.targets > 0 &&
+        x.broken <= x.targets,
+    );
+    if (!entries.length)
+      return Response.json(
+        { error: "Add at least one valid event" },
+        { status: 400 },
+      );
+    const db = getDb();
+    const [shoot] = await db
+      .insert(shoots)
+      .values({ name: body.name.trim(), date: body.date })
+      .returning();
+    await db.insert(eventScores).values(
+      entries.map((x, i) => ({
+        shootId: shoot.id,
+        event: x.event as (typeof events)[number],
+        broken: x.broken,
+        targets: x.targets,
+        sequence: i,
+        label: x.label?.trim() || "Main",
+        classShot: x.classShot?.trim() || null,
+      })),
+    );
+    return Response.json({ shoot }, { status: 201 });
+  } catch (e) {
+    return Response.json(
+      { error: e instanceof Error ? e.message : "Unable to save shoot" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = (await request.json()) as {
+      id: number;
+      name: string;
+      date: string;
+      entries: {
+        event: string;
+        broken: number;
+        targets: number;
+        label?: string;
+        classShot?: string;
+      }[];
+    };
+    if (!Number.isInteger(body.id) || !body.name?.trim() || !body.date)
+      return Response.json(
+        { error: "Valid shoot, name, and date are required" },
+        { status: 400 },
+      );
+    const entries = (body.entries ?? []).filter(
+      (x) =>
+        events.includes(x.event as (typeof events)[number]) &&
+        Number.isInteger(x.broken) &&
+        Number.isInteger(x.targets) &&
+        x.broken >= 0 &&
+        x.targets > 0 &&
+        x.broken <= x.targets,
+    );
+    if (!entries.length)
+      return Response.json(
+        { error: "Add at least one valid event" },
+        { status: 400 },
+      );
+    const db = getDb();
+    await db
+      .update(shoots)
+      .set({ name: body.name.trim(), date: body.date })
+      .where(eq(shoots.id, body.id));
+    await db.delete(eventScores).where(eq(eventScores.shootId, body.id));
+    await db.insert(eventScores).values(
+      entries.map((x, i) => ({
+        shootId: body.id,
+        event: x.event as (typeof events)[number],
+        broken: x.broken,
+        targets: x.targets,
+        sequence: i,
+        label: x.label?.trim() || "Main",
+        classShot: x.classShot?.trim() || null,
+      })),
+    );
+    return Response.json({ ok: true });
+  } catch (e) {
+    return Response.json(
+      { error: e instanceof Error ? e.message : "Unable to update shoot" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const id = Number(new URL(request.url).searchParams.get("id"));
+    if (!Number.isInteger(id))
+      return Response.json(
+        { error: "Valid shoot is required" },
+        { status: 400 },
+      );
+    const db = getDb();
+    await db.delete(eventScores).where(eq(eventScores.shootId, id));
+    await db.delete(shoots).where(eq(shoots.id, id));
+    return Response.json({ ok: true });
+  } catch (e) {
+    return Response.json(
+      { error: e instanceof Error ? e.message : "Unable to delete shoot" },
+      { status: 500 },
+    );
+  }
+}
