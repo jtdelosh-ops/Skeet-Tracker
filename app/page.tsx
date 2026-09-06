@@ -1,8 +1,27 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Target, Trophy, X, Trash2, Pencil, Settings2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Pencil,
+  Plus,
+  Settings2,
+  Target,
+  Trash2,
+  Trophy,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -23,6 +42,20 @@ type Score = {
 };
 type Shoot = { id: number; name: string; date: string; scores: Score[] };
 type StartingClasses = Partial<Record<EventKey, string>>;
+type EventStats = {
+  active: (Score & { date: string; name: string })[];
+  average: number;
+  className: string;
+  mathematicalClass: string;
+};
+type ClassChange = {
+  event: EventKey;
+  label: string;
+  from: string;
+  to: string;
+  average: number;
+  direction: "up" | "down";
+};
 type Entry = {
   event: EventKey;
   label: string;
@@ -151,6 +184,72 @@ const defaults = () =>
     targets: "100",
     classShot: "",
   })) as Entry[];
+const calculateStats = (
+  shoots: Shoot[],
+  startingClasses: StartingClasses,
+) =>
+  Object.fromEntries(
+    keys.map((event) => {
+      const active = shoots
+          .flatMap((shoot) =>
+            shoot.scores
+              .filter((score) => score.event === event)
+              .map((score) => ({
+                ...score,
+                date: shoot.date,
+                name: shoot.name,
+              })),
+          )
+          .slice(-5),
+        broken = active.reduce((total, score) => total + score.broken, 0),
+        targets = active.reduce((total, score) => total + score.targets, 0),
+        average = targets ? broken / targets : 0,
+        mathematicalClass = cls(average, info[event].t);
+      return [
+        event,
+        {
+          active,
+          average,
+          mathematicalClass,
+          className: ruleClass(
+            event,
+            mathematicalClass,
+            startingClasses[event],
+          ),
+        },
+      ];
+    }),
+  ) as Record<EventKey, EventStats>;
+
+const findClassChanges = (
+  previous: Record<EventKey, EventStats>,
+  next: Record<EventKey, EventStats>,
+  startingClasses: StartingClasses,
+) =>
+  keys.flatMap((event): ClassChange[] => {
+    const before = previous[event],
+      after = next[event];
+    if (
+      before.className === after.className ||
+      (!before.active.length && !startingClasses[event])
+    )
+      return [];
+    return [
+      {
+        event,
+        label: info[event].label,
+        from: before.className,
+        to: after.className,
+        average: after.average,
+        direction:
+          classOrder.indexOf(after.className) <
+          classOrder.indexOf(before.className)
+            ? "up"
+            : "down",
+      },
+    ];
+  });
+
 export default function Home() {
   const [shoots, setShoots] = useState<Shoot[]>([]),
     [loading, setLoading] = useState(true),
@@ -160,61 +259,45 @@ export default function Home() {
     [savingSettings, setSavingSettings] = useState(false),
     [editingId, setEditingId] = useState<number | null>(null),
     [error, setError] = useState("");
+  const [rankUps, setRankUps] = useState<ClassChange[]>([]),
+    [rankDowns, setRankDowns] = useState<ClassChange[]>([]);
   const [startingClasses, setStartingClasses] = useState<StartingClasses>({}),
     [draftStartingClasses, setDraftStartingClasses] = useState<StartingClasses>({});
   const [name, setName] = useState(""),
     [date, setDate] = useState(""),
     [entries, setEntries] = useState<Entry[]>(defaults());
-  const load = () =>
-    Promise.all([fetch("/api/shoots"), fetch("/api/settings")])
-      .then(async ([shootResponse, settingsResponse]) => {
+  const requestTrackerData = () =>
+    Promise.all([fetch("/api/shoots"), fetch("/api/settings")]).then(
+      async ([shootResponse, settingsResponse]) => {
         const [shootData, settingsData] = await Promise.all([
           shootResponse.json(),
           settingsResponse.json(),
         ]);
         if (!shootResponse.ok) throw Error(shootData.error);
         if (!settingsResponse.ok) throw Error(settingsData.error);
-        setShoots(shootData.shoots);
-        setStartingClasses(settingsData.startingClasses);
-        setDraftStartingClasses(settingsData.startingClasses);
+        return {
+          shoots: shootData.shoots as Shoot[],
+          startingClasses: settingsData.startingClasses as StartingClasses,
+        };
+      },
+    );
+  const load = () =>
+    requestTrackerData()
+      .then((data) => {
+        setShoots(data.shoots);
+        setStartingClasses(data.startingClasses);
+        setDraftStartingClasses(data.startingClasses);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   useEffect(load, []);
+  useEffect(() => {
+    if (!rankDowns.length || rankUps.length) return;
+    const timeout = window.setTimeout(() => setRankDowns([]), 7000);
+    return () => window.clearTimeout(timeout);
+  }, [rankDowns, rankUps]);
   const stats = useMemo(
-    () =>
-      Object.fromEntries(
-        keys.map((k) => {
-          const active = shoots
-              .flatMap((s) =>
-                s.scores
-                  .filter((x) => x.event === k)
-                  .map((x) => ({ ...x, date: s.date, name: s.name })),
-              )
-              .slice(-5),
-            b = active.reduce((a, x) => a + x.broken, 0),
-            t = active.reduce((a, x) => a + x.targets, 0),
-            average = t ? b / t : 0;
-          const mathematicalClass = cls(average, info[k].t);
-          return [
-            k,
-            {
-              active,
-              average,
-              mathematicalClass,
-              className: ruleClass(k, mathematicalClass, startingClasses[k]),
-            },
-          ];
-        }),
-      ) as Record<
-        EventKey,
-        {
-          active: (Score & { date: string; name: string })[];
-          average: number;
-          className: string;
-          mathematicalClass: string;
-        }
-      >,
+    () => calculateStats(shoots, startingClasses),
     [shoots, startingClasses],
   );
   const hoa =
@@ -296,7 +379,17 @@ export default function Home() {
         d = await r.json();
       if (!r.ok) throw Error(d.error);
       closeForm();
-      await load();
+      const nextData = await requestTrackerData(),
+        nextStats = calculateStats(
+          nextData.shoots,
+          nextData.startingClasses,
+        ),
+        changes = findClassChanges(stats, nextStats, startingClasses);
+      setShoots(nextData.shoots);
+      setStartingClasses(nextData.startingClasses);
+      setDraftStartingClasses(nextData.startingClasses);
+      setRankUps(changes.filter((change) => change.direction === "up"));
+      setRankDowns(changes.filter((change) => change.direction === "down"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to save");
     } finally {
@@ -353,6 +446,49 @@ export default function Home() {
         </div>
       </header>
       {error && <div className="error">{error}</div>}
+      {rankDowns.length > 0 && rankUps.length === 0 && (
+        <div className="rank-down-notice" role="status" aria-live="polite">
+          <ArrowDown aria-hidden="true" />
+          <div>
+            <strong>Classification updated</strong>
+            {rankDowns.map((change) => (
+              <span key={change.event}>
+                {change.label}: {change.from} → {change.to}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      <Dialog open={rankUps.length > 0} onOpenChange={(open) => !open && setRankUps([])}>
+        <DialogContent className="rank-up-dialog">
+          <div className="rank-up-emblem" aria-hidden="true">
+            <Trophy />
+          </div>
+          <DialogHeader>
+            <p className="eyebrow">NEW CLASSIFICATION</p>
+            <DialogTitle>You ranked up!</DialogTitle>
+            <DialogDescription>
+              Your latest result moved your rolling classification.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rank-up-list">
+            {rankUps.map((change) => (
+              <div className="rank-up-result" key={change.event}>
+                <span>{change.label}</span>
+                <strong>
+                  {change.from} <ArrowUp aria-label="to" /> {change.to}
+                </strong>
+                <small>New average {fmt(change.average)}</small>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button>Continue</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {showSettings && (
         <form className="entry settings" onSubmit={saveSettings}>
           <div className="entry-head">
