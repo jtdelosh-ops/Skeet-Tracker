@@ -507,7 +507,6 @@ export default function Home() {
               {keys.map((k) => (
                 <TableHead key={k}>{info[k].short}</TableHead>
               ))}
-              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -520,7 +519,24 @@ export default function Home() {
                       { month: "short", day: "numeric", year: "numeric" },
                     )}
                   </strong>
-                  <span>{s.name}</span>
+                  <div className="shoot-name-row">
+                    <span>{s.name}</span>
+                    <div className="row-actions">
+                      <button
+                        aria-label={`Edit ${s.name}`}
+                        onClick={() => editShoot(s)}
+                      >
+                        <Pencil />
+                      </button>
+                      <button
+                        className="delete"
+                        aria-label={`Delete ${s.name}`}
+                        onClick={() => deleteShoot(s)}
+                      >
+                        <Trash2 />
+                      </button>
+                    </div>
+                  </div>
                 </TableCell>
                 {keys.map((k) => {
                   const total = displayScore(s, k);
@@ -539,23 +555,6 @@ export default function Home() {
                     </TableCell>
                   );
                 })}
-                <TableCell>
-                  <div className="row-actions">
-                    <button
-                      aria-label={`Edit ${s.name}`}
-                      onClick={() => editShoot(s)}
-                    >
-                      <Pencil />
-                    </button>
-                    <button
-                      className="delete"
-                      aria-label={`Delete ${s.name}`}
-                      onClick={() => deleteShoot(s)}
-                    >
-                      <Trash2 />
-                    </button>
-                  </div>
-                </TableCell>
               </TableRow>
             ))}
           </TableBody>
