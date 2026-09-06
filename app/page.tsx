@@ -71,6 +71,7 @@ type Entry = {
   targets: string;
   classShot: string;
   shotDate: string;
+  removable: boolean;
 };
 const info: Record<
   EventKey,
@@ -193,6 +194,7 @@ const defaults = (shotDate = "") =>
     targets: "100",
     classShot: "",
     shotDate,
+    removable: false,
   })) as Entry[];
 const calculateStats = (
   shoots: Shoot[],
@@ -385,14 +387,20 @@ export default function Home() {
     setFormStatus(shoot.status);
     setName(shoot.name);
     setDate(shoot.date);
-    const savedEntries = shoot.scores.map((x) => ({
+    const seenEvents = new Set<EventKey>();
+    const savedEntries = shoot.scores.map((x) => {
+      const removable = seenEvents.has(x.event);
+      seenEvents.add(x.event);
+      return {
         event: x.event,
         label: x.label,
         broken: String(x.broken),
         targets: String(x.targets),
         classShot: x.classShot ?? "",
         shotDate: x.shotDate ?? shoot.date,
-      }));
+        removable,
+      };
+    });
     const missingEntries = defaults(shoot.date)
       .filter(
         (entry) =>
@@ -724,13 +732,17 @@ export default function Home() {
                       <option key={className}>{className}</option>
                     ))}
                 </select>
-                <button
-                  type="button"
-                  aria-label="Remove event"
-                  onClick={() => setEntries((v) => v.filter((_, j) => j !== i))}
-                >
-                  <Trash2 />
-                </button>
+                {x.removable && (
+                  <button
+                    type="button"
+                    aria-label="Remove event"
+                    onClick={() =>
+                      setEntries((v) => v.filter((_, j) => j !== i))
+                    }
+                  >
+                    <Trash2 />
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -748,6 +760,7 @@ export default function Home() {
                   targets: "100",
                   classShot: currentClassFor("12"),
                   shotDate: date,
+                  removable: true,
                 },
               ])
             }
