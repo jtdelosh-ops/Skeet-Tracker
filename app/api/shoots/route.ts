@@ -2,6 +2,30 @@ import { asc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { eventScores, shoots } from "../../../db/schema";
 const events = ["12", "20", "28", "410", "doubles"] as const;
+const statuses = ["in_progress", "complete"] as const;
+type ShootStatus = (typeof statuses)[number];
+type SubmittedEntry = {
+  event: string;
+  broken: number;
+  targets: number;
+  label?: string;
+  classShot?: string;
+  shotDate?: string;
+};
+
+const validEntries = (entries: SubmittedEntry[] | undefined) =>
+  (entries ?? []).filter(
+    (entry) =>
+      events.includes(entry.event as (typeof events)[number]) &&
+      Number.isInteger(entry.broken) &&
+      Number.isInteger(entry.targets) &&
+      entry.broken >= 0 &&
+      entry.targets > 0 &&
+      entry.broken <= entry.targets,
+  );
+
+const validStatus = (status: string | undefined, fallback: ShootStatus) =>
+  statuses.includes(status as ShootStatus) ? (status as ShootStatus) : fallback;
 export async function GET() {
   try {
     const db = getDb();
@@ -33,49 +57,37 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       name: string;
       date: string;
-      entries: {
-        event: string;
-        broken: number;
-        targets: number;
-        label?: string;
-        classShot?: string;
-      }[];
+      status?: string;
+      entries?: SubmittedEntry[];
     };
     if (!body.name?.trim() || !body.date)
       return Response.json(
         { error: "Shoot name and date are required" },
         { status: 400 },
       );
-    const entries = (body.entries ?? []).filter(
-      (x) =>
-        events.includes(x.event as (typeof events)[number]) &&
-        Number.isInteger(x.broken) &&
-        Number.isInteger(x.targets) &&
-        x.broken >= 0 &&
-        x.targets > 0 &&
-        x.broken <= x.targets,
-    );
-    if (!entries.length)
-      return Response.json(
-        { error: "Add at least one valid event" },
-        { status: 400 },
-      );
+    const entries = validEntries(body.entries);
     const db = getDb();
     const [shoot] = await db
       .insert(shoots)
-      .values({ name: body.name.trim(), date: body.date })
+      .values({
+        name: body.name.trim(),
+        date: body.date,
+        status: validStatus(body.status, "in_progress"),
+      })
       .returning();
-    await db.insert(eventScores).values(
-      entries.map((x, i) => ({
-        shootId: shoot.id,
-        event: x.event as (typeof events)[number],
-        broken: x.broken,
-        targets: x.targets,
-        sequence: i,
-        label: x.label?.trim() || "Main",
-        classShot: x.classShot?.trim() || null,
-      })),
-    );
+    if (entries.length)
+      await db.insert(eventScores).values(
+        entries.map((entry, sequence) => ({
+          shootId: shoot.id,
+          event: entry.event as (typeof events)[number],
+          broken: entry.broken,
+          targets: entry.targets,
+          sequence,
+          label: entry.label?.trim() || "Main",
+          classShot: entry.classShot?.trim() || null,
+          shotDate: entry.shotDate || body.date,
+        })),
+      );
     return Response.json({ shoot }, { status: 201 });
   } catch (e) {
     return Response.json(
@@ -91,50 +103,40 @@ export async function PATCH(request: Request) {
       id: number;
       name: string;
       date: string;
-      entries: {
-        event: string;
-        broken: number;
-        targets: number;
-        label?: string;
-        classShot?: string;
-      }[];
+      status?: string;
+      entries?: SubmittedEntry[];
     };
     if (!Number.isInteger(body.id) || !body.name?.trim() || !body.date)
       return Response.json(
         { error: "Valid shoot, name, and date are required" },
         { status: 400 },
       );
-    const entries = (body.entries ?? []).filter(
-      (x) =>
-        events.includes(x.event as (typeof events)[number]) &&
-        Number.isInteger(x.broken) &&
-        Number.isInteger(x.targets) &&
-        x.broken >= 0 &&
-        x.targets > 0 &&
-        x.broken <= x.targets,
-    );
-    if (!entries.length)
-      return Response.json(
-        { error: "Add at least one valid event" },
-        { status: 400 },
-      );
+    const entries = validEntries(body.entries);
     const db = getDb();
     await db
       .update(shoots)
-      .set({ name: body.name.trim(), date: body.date })
+      .set({
+        name: body.name.trim(),
+        date: body.date,
+        status: validStatus(body.status, "complete"),
+      })
       .where(eq(shoots.id, body.id));
-    await db.delete(eventScores).where(eq(eventScores.shootId, body.id));
-    await db.insert(eventScores).values(
-      entries.map((x, i) => ({
-        shootId: body.id,
-        event: x.event as (typeof events)[number],
-        broken: x.broken,
-        targets: x.targets,
-        sequence: i,
-        label: x.label?.trim() || "Main",
-        classShot: x.classShot?.trim() || null,
-      })),
-    );
+    if (body.entries !== undefined) {
+      await db.delete(eventScores).where(eq(eventScores.shootId, body.id));
+      if (entries.length)
+        await db.insert(eventScores).values(
+          entries.map((entry, sequence) => ({
+            shootId: body.id,
+            event: entry.event as (typeof events)[number],
+            broken: entry.broken,
+            targets: entry.targets,
+            sequence,
+            label: entry.label?.trim() || "Main",
+            classShot: entry.classShot?.trim() || null,
+            shotDate: entry.shotDate || body.date,
+          })),
+        );
+    }
     return Response.json({ ok: true });
   } catch (e) {
     return Response.json(
