@@ -15,6 +15,13 @@
       "when": 1788695033167,
       "tag": "0001_purple_kid_colt",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788707200687,
+      "tag": "0002_mighty_grandmaster",
+      "breakpoints": true
     }
   ]
 }
