@@ -39,8 +39,16 @@ type Score = {
   label: string;
   sequence: number;
   classShot: string | null;
+  shotDate: string | null;
 };
-type Shoot = { id: number; name: string; date: string; scores: Score[] };
+type ShootStatus = "in_progress" | "complete";
+type Shoot = {
+  id: number;
+  name: string;
+  date: string;
+  status: ShootStatus;
+  scores: Score[];
+};
 type StartingClasses = Partial<Record<EventKey, string>>;
 type EventStats = {
   active: (Score & { date: string; name: string })[];
@@ -62,6 +70,7 @@ type Entry = {
   broken: string;
   targets: string;
   classShot: string;
+  shotDate: string;
 };
 const info: Record<
   EventKey,
@@ -176,13 +185,14 @@ const hoaSafeguard = (mathematical: string, componentClasses: string[]) => {
   );
   return classOrder[Math.min(classOrder.indexOf(mathematical), lowestGun)];
 };
-const defaults = () =>
+const defaults = (shotDate = "") =>
   keys.map((event) => ({
     event,
     label: "Main",
     broken: "",
     targets: "100",
     classShot: "",
+    shotDate,
   })) as Entry[];
 const calculateStats = (
   shoots: Shoot[],
@@ -196,7 +206,7 @@ const calculateStats = (
               .filter((score) => score.event === event)
               .map((score) => ({
                 ...score,
-                date: shoot.date,
+                date: score.shotDate ?? shoot.date,
                 name: shoot.name,
               })),
           )
@@ -257,6 +267,7 @@ export default function Home() {
     [saving, setSaving] = useState(false),
     [savingSettings, setSavingSettings] = useState(false),
     [editingId, setEditingId] = useState<number | null>(null),
+    [formStatus, setFormStatus] = useState<ShootStatus>("in_progress"),
     [error, setError] = useState("");
   const [rankUps, setRankUps] = useState<ClassChange[]>([]),
     [rankDowns, setRankDowns] = useState<ClassChange[]>([]);
@@ -338,6 +349,9 @@ export default function Home() {
                 .filter((classShot): classShot is string => Boolean(classShot)),
             ),
           ],
+          dates: [
+            ...new Set(rows.map((score) => score.shotDate ?? shoot.date)),
+          ],
         }
       : null;
   };
@@ -346,6 +360,7 @@ export default function Home() {
   const closeForm = () => {
     setShow(false);
     setEditingId(null);
+    setFormStatus("in_progress");
     setName("");
     setDate("");
     setEntries(defaults());
@@ -354,6 +369,7 @@ export default function Home() {
     classOrder.includes(stats[event].className) ? stats[event].className : "";
   const newShoot = () => {
     setEditingId(null);
+    setFormStatus("in_progress");
     setName("");
     setDate("");
     setEntries(
@@ -366,16 +382,28 @@ export default function Home() {
   };
   const editShoot = (shoot: Shoot) => {
     setEditingId(shoot.id);
+    setFormStatus(shoot.status);
     setName(shoot.name);
     setDate(shoot.date);
-    setEntries(
-      shoot.scores.map((x) => ({
+    const savedEntries = shoot.scores.map((x) => ({
         event: x.event,
         label: x.label,
         broken: String(x.broken),
         targets: String(x.targets),
         classShot: x.classShot ?? "",
-      })),
+        shotDate: x.shotDate ?? shoot.date,
+      }));
+    const missingEntries = defaults(shoot.date)
+      .filter(
+        (entry) =>
+          !shoot.scores.some((score) => score.event === entry.event),
+      )
+      .map((entry) => ({
+        ...entry,
+        classShot: currentClassFor(entry.event),
+      }));
+    setEntries(
+      [...savedEntries, ...missingEntries],
     );
     setShow(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -399,10 +427,23 @@ export default function Home() {
           broken: Number(x.broken),
           targets: Number(x.targets),
         }));
+      const submitter = (e.nativeEvent as SubmitEvent)
+          .submitter as HTMLButtonElement | null,
+        requestedStatus = submitter?.value,
+        nextStatus: ShootStatus =
+          requestedStatus === "complete" || requestedStatus === "in_progress"
+            ? requestedStatus
+            : formStatus;
       const r = await fetch("/api/shoots", {
           method: editingId ? "PATCH" : "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: editingId, name, date, entries: payload }),
+          body: JSON.stringify({
+            id: editingId,
+            name,
+            date,
+            status: nextStatus,
+            entries: payload,
+          }),
         }),
         d = await r.json();
       if (!r.ok) throw Error(d.error);
@@ -449,6 +490,10 @@ export default function Home() {
       setSavingSettings(false);
     }
   }
+  const inProgressShoots = [...shoots]
+      .reverse()
+      .filter((shoot) => shoot.status === "in_progress"),
+    completedShoots = shoots.filter((shoot) => shoot.status === "complete");
   return (
     <main>
       <header>
@@ -590,13 +635,24 @@ export default function Home() {
                 required
                 type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => {
+                  const nextDate = e.target.value;
+                  setDate(nextDate);
+                  if (!editingId)
+                    setEntries((current) =>
+                      current.map((entry) => ({
+                        ...entry,
+                        shotDate: entry.shotDate || nextDate,
+                      })),
+                    );
+                }}
               />
             </label>
           </div>
           <div className="entry-labels">
             <span>Event</span>
             <span>Event type</span>
+            <span>Date shot</span>
             <span>Broken</span>
             <span>Targets</span>
             <span>Class shot</span>
@@ -629,6 +685,12 @@ export default function Home() {
                   <option>Main</option>
                   <option>Preliminary</option>
                 </select>
+                <Input
+                  aria-label="Date shot"
+                  type="date"
+                  value={x.shotDate}
+                  onChange={(e) => setEntry(i, { shotDate: e.target.value })}
+                />
                 <Input
                   aria-label="Targets broken"
                   min="0"
@@ -685,16 +747,87 @@ export default function Home() {
                   broken: "",
                   targets: "100",
                   classShot: currentClassFor("12"),
+                  shotDate: date,
                 },
               ])
             }
           >
             <Plus /> Add another event
           </Button>
-          <Button disabled={saving}>
-            {saving ? "Saving…" : editingId ? "Update shoot" : "Save shoot"}
-          </Button>
+          <div className="form-actions">
+            {formStatus === "in_progress" && (
+              <Button
+                type="submit"
+                variant="outline"
+                value="in_progress"
+                disabled={saving}
+              >
+                {saving ? "Saving…" : editingId ? "Save progress" : "Start shoot"}
+              </Button>
+            )}
+            <Button type="submit" value="complete" disabled={saving}>
+              {saving
+                ? "Saving…"
+                : formStatus === "complete"
+                  ? "Save changes"
+                  : "Finish shoot"}
+            </Button>
+          </div>
         </form>
+      )}
+      {inProgressShoots.length > 0 && (
+        <section className="active-shoots" aria-labelledby="active-shoots-title">
+          <div className="active-section-title">
+            <div>
+              <p className="eyebrow">IN PROGRESS</p>
+              <h2 id="active-shoots-title">
+                {inProgressShoots.length === 1
+                  ? "Current shoot"
+                  : "Current shoots"}
+              </h2>
+            </div>
+            <span>{inProgressShoots.length}</span>
+          </div>
+          {inProgressShoots.map((shoot) => (
+            <article className="active-shoot" key={shoot.id}>
+              <div className="active-shoot-head">
+                <div>
+                  <h3>{shoot.name}</h3>
+                  <p>
+                    Started {new Date(shoot.date + "T12:00:00").toLocaleDateString(
+                      "en-US",
+                      { month: "short", day: "numeric", year: "numeric" },
+                    )}
+                  </p>
+                </div>
+                <div className="active-actions">
+                  <Button variant="outline" onClick={() => editShoot(shoot)}>
+                    <Pencil /> Continue
+                  </Button>
+                  <button
+                    aria-label={`Delete ${shoot.name}`}
+                    onClick={() => deleteShoot(shoot)}
+                  >
+                    <Trash2 />
+                  </button>
+                </div>
+              </div>
+              <div className="active-event-grid">
+                {keys.map((event) => {
+                  const score = displayScore(shoot, event);
+                  return (
+                    <div className={score ? "recorded" : "pending"} key={event}>
+                      <span>{info[event].short}</span>
+                      <strong>
+                        {score ? `${score.broken}/${score.targets}` : "Pending"}
+                      </strong>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+          ))}
+        </section>
       )}
       <section className="overview">
         <div className="overall">
@@ -769,7 +902,7 @@ export default function Home() {
         <div className="section-title">
           <div>
             <p className="eyebrow">TOURNAMENT HISTORY</p>
-            <h2>{shoots.length} registered shoots</h2>
+            <h2>{completedShoots.length} completed shoots</h2>
           </div>
           <Target />
         </div>
@@ -783,7 +916,7 @@ export default function Home() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {[...shoots].reverse().map((s) => (
+            {[...completedShoots].reverse().map((s) => (
               <TableRow key={s.id}>
                 <TableCell>
                   <strong>
