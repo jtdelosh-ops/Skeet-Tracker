@@ -25,5 +25,7 @@ test("ships schema-only migrations for a fresh empty database", async () => {
   assert.match(sql, /CREATE TABLE `shoots`/);
   assert.match(sql, /CREATE TABLE `event_scores`/);
   assert.match(sql, /CREATE TABLE `class_settings`/);
+  assert.match(sql, /ADD `shot_date` text/);
+  assert.match(sql, /ADD `status` text DEFAULT 'complete' NOT NULL/);
   assert.doesNotMatch(sql, /\bINSERT\s+INTO\b/i);
 });

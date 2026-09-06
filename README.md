@@ -10,6 +10,10 @@ deployment URL, production database identifier, or preset starting classes.
 Starting classes can be configured per event in the app; leaving one unset uses
 the mathematical rolling-average class without an annual downgrade floor.
 
+Shoots can remain in progress across multiple days. Completed event scores update
+their gauge averages immediately, while blank and pending events are not stored or
+included in any calculation. Finish the shoot when all desired events are recorded.
+
 ## Run it locally
 
 Prerequisite: [Node.js](https://nodejs.org/) 22.13 or newer.
