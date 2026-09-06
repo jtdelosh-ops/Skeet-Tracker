@@ -668,23 +668,27 @@ export default function Home() {
           <div className="event-entries">
             {entries.map((x, i) => (
               <div className="event-entry" key={i}>
-                <select
-                  aria-label="Event"
-                  value={x.event}
-                  onChange={(e) => {
-                    const event = e.target.value as EventKey;
-                    setEntry(i, {
-                      event,
-                      classShot: currentClassFor(event),
-                    });
-                  }}
-                >
-                  {keys.map((k) => (
-                    <option value={k} key={k}>
-                      {info[k].label}
-                    </option>
-                  ))}
-                </select>
+                {x.removable ? (
+                  <select
+                    aria-label="Event"
+                    value={x.event}
+                    onChange={(e) => {
+                      const event = e.target.value as EventKey;
+                      setEntry(i, {
+                        event,
+                        classShot: currentClassFor(event),
+                      });
+                    }}
+                  >
+                    {keys.map((k) => (
+                      <option value={k} key={k}>
+                        {info[k].label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="event-name-fixed">{info[x.event].label}</span>
+                )}
                 <select
                   aria-label="Event type"
                   value={x.label}
