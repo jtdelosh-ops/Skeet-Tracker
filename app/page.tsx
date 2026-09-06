@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Target, Trophy, X, Trash2, Pencil } from "lucide-react";
+import { Plus, Target, Trophy, X, Trash2, Pencil, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,6 +22,7 @@ type Score = {
   classShot: string | null;
 };
 type Shoot = { id: number; name: string; date: string; scores: Score[] };
+type StartingClasses = Partial<Record<EventKey, string>>;
 type Entry = {
   event: EventKey;
   label: string;
@@ -115,22 +116,20 @@ const hoa4: [string, number][] = [
     ["E", 0],
   ];
 const classOrder = ["AAA", "AA", "A", "B", "C", "D", "E"];
-const starting2026: Record<EventKey, string> = {
-  "12": "B",
-  "20": "AA",
-  "28": "AA",
-  "410": "A",
-  doubles: "B",
-};
 const round4 = (n: number) => Math.round((n + Number.EPSILON) * 10000) / 10000;
 const cls = (a: number, t: [string, number][]) =>
     t.find(([, f]) => round4(a) >= f)?.[0] ?? "—",
   fmt = (n: number) => round4(n).toFixed(4).replace(/^0/, "");
-const ruleClass = (event: EventKey, mathematical: string) => {
+const ruleClass = (
+  event: EventKey,
+  mathematical: string,
+  startingClass?: string,
+) => {
+  if (!startingClass) return mathematical;
   const floor =
     classOrder[
       Math.min(
-        classOrder.indexOf(starting2026[event]) + 1,
+        classOrder.indexOf(startingClass) + 1,
         event === "12" ? 6 : 5,
       )
     ];
@@ -156,18 +155,28 @@ export default function Home() {
   const [shoots, setShoots] = useState<Shoot[]>([]),
     [loading, setLoading] = useState(true),
     [show, setShow] = useState(false),
+    [showSettings, setShowSettings] = useState(false),
     [saving, setSaving] = useState(false),
+    [savingSettings, setSavingSettings] = useState(false),
     [editingId, setEditingId] = useState<number | null>(null),
     [error, setError] = useState("");
+  const [startingClasses, setStartingClasses] = useState<StartingClasses>({}),
+    [draftStartingClasses, setDraftStartingClasses] = useState<StartingClasses>({});
   const [name, setName] = useState(""),
     [date, setDate] = useState(""),
     [entries, setEntries] = useState<Entry[]>(defaults());
   const load = () =>
-    fetch("/api/shoots")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) throw Error(d.error);
-        setShoots(d.shoots);
+    Promise.all([fetch("/api/shoots"), fetch("/api/settings")])
+      .then(async ([shootResponse, settingsResponse]) => {
+        const [shootData, settingsData] = await Promise.all([
+          shootResponse.json(),
+          settingsResponse.json(),
+        ]);
+        if (!shootResponse.ok) throw Error(shootData.error);
+        if (!settingsResponse.ok) throw Error(settingsData.error);
+        setShoots(shootData.shoots);
+        setStartingClasses(settingsData.startingClasses);
+        setDraftStartingClasses(settingsData.startingClasses);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -193,7 +202,7 @@ export default function Home() {
               active,
               average,
               mathematicalClass,
-              className: ruleClass(k, mathematicalClass),
+              className: ruleClass(k, mathematicalClass, startingClasses[k]),
             },
           ];
         }),
@@ -206,7 +215,7 @@ export default function Home() {
           mathematicalClass: string;
         }
       >,
-    [shoots],
+    [shoots, startingClasses],
   );
   const hoa =
       (stats["12"].average +
@@ -294,6 +303,31 @@ export default function Home() {
       setSaving(false);
     }
   }
+  const openSettings = () => {
+    setDraftStartingClasses(startingClasses);
+    setShowSettings(true);
+    setShow(false);
+  };
+  async function saveSettings(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingSettings(true);
+    setError("");
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ startingClasses: draftStartingClasses }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw Error(data.error);
+      setStartingClasses(data.startingClasses);
+      setShowSettings(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to save settings");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
   return (
     <main>
       <header>
@@ -302,14 +336,64 @@ export default function Home() {
           <h1>Skeet record</h1>
           <p className="sub">Rolling averages · classes · tournament history</p>
         </div>
-        <Button
-          onClick={() => (show ? closeForm() : setShow(true))}
-          className="add"
-        >
-          <Plus /> Add shoot
-        </Button>
+        <div className="header-actions">
+          <Button variant="outline" onClick={openSettings} className="settings-button">
+            <Settings2 /> Class settings
+          </Button>
+          <Button
+            onClick={() => {
+              setShowSettings(false);
+              if (show) closeForm();
+              else setShow(true);
+            }}
+            className="add"
+          >
+            <Plus /> Add shoot
+          </Button>
+        </div>
       </header>
       {error && <div className="error">{error}</div>}
+      {showSettings && (
+        <form className="entry settings" onSubmit={saveSettings}>
+          <div className="entry-head">
+            <div>
+              <h2>Annual starting classes</h2>
+              <p>
+                Optional. A configured class limits downgrades to one class below
+                where you started the year. Leave an event unset to use only its
+                rolling average.
+              </p>
+            </div>
+            <button type="button" aria-label="Close settings" onClick={() => setShowSettings(false)}>
+              <X />
+            </button>
+          </div>
+          <div className="settings-grid">
+            {keys.map((event) => (
+              <label key={event}>
+                {info[event].label}
+                <select
+                  value={draftStartingClasses[event] ?? ""}
+                  onChange={(e) =>
+                    setDraftStartingClasses((current) => ({
+                      ...current,
+                      [event]: e.target.value || undefined,
+                    }))
+                  }
+                >
+                  <option value="">No annual floor</option>
+                  {classOrder.slice(0, event === "12" ? 7 : 6).map((className) => (
+                    <option key={className}>{className}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+          <Button disabled={savingSettings}>
+            {savingSettings ? "Saving…" : "Save class settings"}
+          </Button>
+        </form>
+      )}
       {show && (
         <form className="entry" onSubmit={submit}>
           <div className="entry-head">
@@ -484,7 +568,7 @@ export default function Home() {
               </div>
               <p className="count">
                 Last {s.active.length} registered events
-                {s.className !== s.mathematicalClass
+                {startingClasses[k] && s.className !== s.mathematicalClass
                   ? ` · average places ${s.mathematicalClass}, annual floor ${s.className}`
                   : ""}
               </p>

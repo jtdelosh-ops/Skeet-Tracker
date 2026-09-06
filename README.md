@@ -6,7 +6,9 @@ averages, classifications, HOA/HAA, and tournament history. It supports 12,
 within one shoot.
 
 The tracker starts empty. It contains no personal score history, account,
-deployment URL, or production database identifier.
+deployment URL, production database identifier, or preset starting classes.
+Starting classes can be configured per event in the app; leaving one unset uses
+the mathematical rolling-average class without an annual downgrade floor.
 
 ## Run it locally
 
