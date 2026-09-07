@@ -51,10 +51,12 @@ type Shoot = {
 };
 type StartingClasses = Partial<Record<EventKey, string>>;
 type EventStats = {
-  active: (Score & { date: string; name: string })[];
+  active: (Score & { date: string; name: string; status: ShootStatus })[];
   average: number;
+  classificationAverage: number;
   className: string;
   mathematicalClass: string;
+  provisional: boolean;
 };
 type ClassChange = {
   event: EventKey;
@@ -71,6 +73,7 @@ type Entry = {
   targets: string;
   classShot: string;
   shotDate: string;
+  removable: boolean;
 };
 const info: Record<
   EventKey,
@@ -193,29 +196,59 @@ const defaults = (shotDate = "") =>
     targets: "100",
     classShot: "",
     shotDate,
+    removable: false,
   })) as Entry[];
-const calculateStats = (
+const isPreliminary = (score: Pick<Score, "label">) =>
+  score.label.trim().toLowerCase() === "preliminary";
+
+const orderedScores = (shoot: Shoot, event: EventKey) =>
+  shoot.scores
+    .filter((score) => score.event === event)
+    .sort((a, b) => {
+      const eventOrder = Number(isPreliminary(b)) - Number(isPreliminary(a));
+      return eventOrder || a.sequence - b.sequence || a.id - b.id;
+    })
+    .map((score) => ({
+      ...score,
+      date: score.shotDate ?? shoot.date,
+      name: shoot.name,
+      status: shoot.status,
+    }));
+
+export const calculateStats = (
   shoots: Shoot[],
   startingClasses: StartingClasses,
 ) =>
   Object.fromEntries(
     keys.map((event) => {
-      const active = shoots
-          .flatMap((shoot) =>
-            shoot.scores
-              .filter((score) => score.event === event)
-              .map((score) => ({
-                ...score,
-                date: score.shotDate ?? shoot.date,
-                name: shoot.name,
-              })),
-          )
+      const scoredEvents = shoots.flatMap((shoot) =>
+          orderedScores(shoot, event),
+        ),
+        active = scoredEvents
           .slice(-5),
         broken = active.reduce((total, score) => total + score.broken, 0),
         targets = active.reduce((total, score) => total + score.targets, 0),
         average = targets ? broken / targets : 0,
-        mathematicalClass = targets ? cls(average, info[event].t) : "—",
-        className = targets
+        classificationActive = scoredEvents
+          .filter(
+            (score) => score.status === "complete" || !isPreliminary(score),
+          )
+          .slice(-5),
+        classificationBroken = classificationActive.reduce(
+          (total, score) => total + score.broken,
+          0,
+        ),
+        classificationTargets = classificationActive.reduce(
+          (total, score) => total + score.targets,
+          0,
+        ),
+        classificationAverage = classificationTargets
+          ? classificationBroken / classificationTargets
+          : 0,
+        mathematicalClass = classificationTargets
+          ? cls(classificationAverage, info[event].t)
+          : "—",
+        className = classificationTargets
           ? ruleClass(event, mathematicalClass, startingClasses[event])
           : startingClasses[event] ?? "—";
       return [
@@ -223,14 +256,18 @@ const calculateStats = (
         {
           active,
           average,
+          classificationAverage,
           mathematicalClass,
           className,
+          provisional: scoredEvents.some(
+            (score) => score.status === "in_progress" && isPreliminary(score),
+          ),
         },
       ];
     }),
   ) as Record<EventKey, EventStats>;
 
-const findClassChanges = (
+export const findClassChanges = (
   previous: Record<EventKey, EventStats>,
   next: Record<EventKey, EventStats>,
   startingClasses: StartingClasses,
@@ -253,11 +290,32 @@ const findClassChanges = (
         label: info[event].label,
         from: before.className,
         to: after.className,
-        average: after.average,
+        average: after.classificationAverage,
         direction: afterIndex < beforeIndex ? "up" : "down",
       },
     ];
   });
+
+export const summarizeShootGauge = (shoot: Shoot, event: EventKey) => {
+  const rows = shoot.scores.filter((score) => score.event === event);
+  return rows.length
+    ? {
+        broken: rows.reduce((total, score) => total + score.broken, 0),
+        targets: rows.reduce((total, score) => total + score.targets, 0),
+        count: rows.length,
+        classes: [
+          ...new Set(
+            rows
+              .map((score) => score.classShot)
+              .filter((classShot): classShot is string => Boolean(classShot)),
+          ),
+        ],
+        dates: [
+          ...new Set(rows.map((score) => score.shotDate ?? shoot.date)),
+        ],
+      }
+    : null;
+};
 
 export default function Home() {
   const [shoots, setShoots] = useState<Shoot[]>([]),
@@ -335,26 +393,6 @@ export default function Home() {
           keys.map((k) => stats[k].className),
         )
       : "—";
-  const displayScore = (shoot: Shoot, event: EventKey) => {
-    const rows = shoot.scores.filter((score) => score.event === event);
-    return rows.length
-      ? {
-          broken: rows.reduce((total, score) => total + score.broken, 0),
-          targets: rows.reduce((total, score) => total + score.targets, 0),
-          count: rows.length,
-          classes: [
-            ...new Set(
-              rows
-                .map((score) => score.classShot)
-                .filter((classShot): classShot is string => Boolean(classShot)),
-            ),
-          ],
-          dates: [
-            ...new Set(rows.map((score) => score.shotDate ?? shoot.date)),
-          ],
-        }
-      : null;
-  };
   const setEntry = (i: number, p: Partial<Entry>) =>
     setEntries((v) => v.map((x, j) => (j === i ? { ...x, ...p } : x)));
   const closeForm = () => {
@@ -385,14 +423,20 @@ export default function Home() {
     setFormStatus(shoot.status);
     setName(shoot.name);
     setDate(shoot.date);
-    const savedEntries = shoot.scores.map((x) => ({
+    const seenEvents = new Set<EventKey>();
+    const savedEntries = shoot.scores.map((x) => {
+      const removable = seenEvents.has(x.event);
+      seenEvents.add(x.event);
+      return {
         event: x.event,
         label: x.label,
         broken: String(x.broken),
         targets: String(x.targets),
         classShot: x.classShot ?? "",
         shotDate: x.shotDate ?? shoot.date,
-      }));
+        removable,
+      };
+    });
     const missingEntries = defaults(shoot.date)
       .filter(
         (entry) =>
@@ -660,23 +704,27 @@ export default function Home() {
           <div className="event-entries">
             {entries.map((x, i) => (
               <div className="event-entry" key={i}>
-                <select
-                  aria-label="Event"
-                  value={x.event}
-                  onChange={(e) => {
-                    const event = e.target.value as EventKey;
-                    setEntry(i, {
-                      event,
-                      classShot: currentClassFor(event),
-                    });
-                  }}
-                >
-                  {keys.map((k) => (
-                    <option value={k} key={k}>
-                      {info[k].label}
-                    </option>
-                  ))}
-                </select>
+                {x.removable ? (
+                  <select
+                    aria-label="Event"
+                    value={x.event}
+                    onChange={(e) => {
+                      const event = e.target.value as EventKey;
+                      setEntry(i, {
+                        event,
+                        classShot: currentClassFor(event),
+                      });
+                    }}
+                  >
+                    {keys.map((k) => (
+                      <option value={k} key={k}>
+                        {info[k].label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="event-name-fixed">{info[x.event].label}</span>
+                )}
                 <select
                   aria-label="Event type"
                   value={x.label}
@@ -724,13 +772,17 @@ export default function Home() {
                       <option key={className}>{className}</option>
                     ))}
                 </select>
-                <button
-                  type="button"
-                  aria-label="Remove event"
-                  onClick={() => setEntries((v) => v.filter((_, j) => j !== i))}
-                >
-                  <Trash2 />
-                </button>
+                {x.removable && (
+                  <button
+                    type="button"
+                    aria-label="Remove event"
+                    onClick={() =>
+                      setEntries((v) => v.filter((_, j) => j !== i))
+                    }
+                  >
+                    <Trash2 />
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -748,6 +800,7 @@ export default function Home() {
                   targets: "100",
                   classShot: currentClassFor("12"),
                   shotDate: date,
+                  removable: true,
                 },
               ])
             }
@@ -814,7 +867,7 @@ export default function Home() {
               </div>
               <div className="active-event-grid">
                 {keys.map((event) => {
-                  const score = displayScore(shoot, event);
+                  const score = summarizeShootGauge(shoot, event);
                   return (
                     <div className={score ? "recorded" : "pending"} key={event}>
                       <span>{info[event].short}</span>
@@ -888,6 +941,7 @@ export default function Home() {
               </div>
               <p className="count">
                 Last {s.active.length} registered events
+                {s.provisional ? " · class updates when shoot is finished" : ""}
                 {startingClasses[k] &&
                 s.mathematicalClass !== "—" &&
                 s.className !== s.mathematicalClass
@@ -945,7 +999,7 @@ export default function Home() {
                   </div>
                 </TableCell>
                 {keys.map((k) => {
-                  const total = displayScore(s, k);
+                  const total = summarizeShootGauge(s, k);
                   return (
                     <TableCell key={k}>
                       {total ? (

@@ -14,6 +14,13 @@ Shoots can remain in progress across multiple days. Completed event scores updat
 their gauge averages immediately, while blank and pending events are not stored or
 included in any calculation. Finish the shoot when all desired events are recorded.
 
+Preliminary and main scores are stored as separate registered events. Tournament
+history combines their broken and scheduled targets under the applicable gauge,
+matching the NSSA history-style total, while the rolling classification keeps each
+event in sequence. An in-progress preliminary can update the displayed gauge
+average, but its official class effect and rank notification wait until the shoot is
+finished.
+
 ## Run it locally
 
 Prerequisite: [Node.js](https://nodejs.org/) 22.13 or newer.
