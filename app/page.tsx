@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowUp,
   Pencil,
+  StickyNote,
   Plus,
   Settings2,
   Target,
@@ -12,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -30,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { calculateStats, findClassChanges, summarizeShootGauge, defaults, keys, info, classOrder, hoa4, hoa5, hoaSafeguard, cls, fmt } from "@/lib/scoring";
+import { calculateStats, findClassChanges, summarizeShootGauge, shootTotals, defaults, keys, info, classOrder, hoa4, hoa5, hoaSafeguard, cls, fmt } from "@/lib/scoring";
 import type { Shoot, ShootStatus, EventKey, Entry, StartingClasses, ClassChange, EventStats } from "@/lib/scoring";
 import { TrackerBrand } from "@/components/tracker-brand";
 import { useHistory } from "@/hooks/use-history";
@@ -49,6 +51,8 @@ export default function Home() {
     [rankDowns, setRankDowns] = useState<ClassChange[]>([]);
   const [startingClasses, setStartingClasses] = useState<StartingClasses>({}),
     [draftStartingClasses, setDraftStartingClasses] = useState<StartingClasses>({});
+  const [notes, setNotes] = useState("");
+  const [notesShoot, setNotesShoot] = useState<Shoot | null>(null);
   const [name, setName] = useState(""),
     [date, setDate] = useState(""),
     [entries, setEntries] = useState<Entry[]>(defaults());
@@ -104,6 +108,7 @@ export default function Home() {
     setEditingId(null);
     setFormStatus("in_progress");
     setName("");
+    setNotes("");
     setDate("");
     setEntries(defaults());
   };
@@ -113,6 +118,7 @@ export default function Home() {
     setEditingId(null);
     setFormStatus("in_progress");
     setName("");
+    setNotes("");
     setDate("");
     setEntries(
       defaults().map((entry) => ({
@@ -126,6 +132,7 @@ export default function Home() {
     setEditingId(shoot.id);
     setFormStatus(shoot.status);
     setName(shoot.name);
+    setNotes(shoot.notes?.content ?? "");
     setDate(shoot.date);
     const seenEvents = new Set<EventKey>();
     const savedEntries = shoot.scores.map((x) => {
@@ -189,6 +196,7 @@ export default function Home() {
           body: JSON.stringify({
             id: editingId,
             name,
+            notes,
             date,
             status: nextStatus,
             entries: payload,
@@ -261,6 +269,13 @@ export default function Home() {
         </div>
       </header>
       {error && <div className="error">{error}</div>}
+      <Dialog open={Boolean(notesShoot)} onOpenChange={(open) => !open && setNotesShoot(null)}>
+        <DialogContent className="shoot-notes-dialog">
+          <DialogHeader><DialogTitle>Shoot notes</DialogTitle><DialogDescription>{notesShoot?.name}</DialogDescription></DialogHeader>
+          <p className="shoot-notes-content">{notesShoot?.notes?.content}</p>
+          <DialogFooter><Button variant="outline" onClick={() => { if (notesShoot) editShoot(notesShoot); setNotesShoot(null); }}>Edit notes</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       {rankDowns.length > 0 && rankUps.length === 0 && (
         <div className="rank-down-notice" role="status" aria-live="polite">
           <ArrowDown aria-hidden="true" />
@@ -390,6 +405,11 @@ export default function Home() {
               />
             </label>
           </div>
+          <label className="shoot-notes-field">
+            Shoot notes (optional)
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={5000} rows={3} placeholder="Conditions, missed stations, equipment changes, what worked, or what to practice." />
+            <small>{notes.length}/5,000 characters</small>
+          </label>
           <div className="entry-labels">
             <span>Event</span>
             <span>Event type</span>
@@ -671,6 +691,7 @@ export default function Home() {
           <TableHeader>
             <TableRow>
               <TableHead>Date / shoot</TableHead>
+              <TableHead>Totals</TableHead>
               {keys.map((k) => (
                 <TableHead key={k}>{info[k].short}</TableHead>
               ))}
@@ -689,6 +710,7 @@ export default function Home() {
                   <div className="shoot-name-row">
                     <span>{s.name}</span>
                     <div className="row-actions">
+                      {s.notes?.content && <button aria-label={`View notes for ${s.name}`} onClick={() => setNotesShoot(s)}><StickyNote /></button>}
                       <button
                         aria-label={`Edit ${s.name}`}
                         onClick={() => editShoot(s)}
@@ -705,6 +727,11 @@ export default function Home() {
                     </div>
                   </div>
                 </TableCell>
+                <TableCell className="shoot-totals">{(() => {
+                  const totals = shootTotals(s);
+                  return <><strong>{totals.hoa ? `HOA ${totals.hoa.broken}/${totals.hoa.targets}` : "HOA incomplete"}</strong>
+                    {totals.hasDoubles && <span>{totals.haa ? `HAA ${totals.haa.broken}/${totals.haa.targets}` : "HAA incomplete"}</span>}</>;
+                })()}</TableCell>
                 {keys.map((k) => {
                   const total = summarizeShootGauge(s, k);
                   return (

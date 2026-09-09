@@ -20,3 +20,5 @@
 @media(max-width:600px){.active-shoot-head{align-items:flex-start}.active-actions .inline-flex{font-size:0;width:38px;padding:0}.active-event-grid{grid-template-columns:repeat(2,1fr)}.active-event-grid div:last-child{grid-column:1/-1}}
 .event-name-fixed{display:flex;align-items:center;height:40px;padding:0 10px;font-size:.82rem;font-weight:700;color:var(--foreground)}
 .tracker-brand svg{display:block;width:100%;height:auto;mix-blend-mode:multiply}
+.shoot-notes-field{display:grid;gap:6px;margin:16px 0}.shoot-notes-field textarea{font-size:16px;min-height:90px}.shoot-notes-field small{font-weight:400;color:var(--muted-foreground)}.shoot-notes-content{white-space:pre-wrap;overflow-wrap:anywhere;max-height:55vh;overflow-y:auto;margin:0}.shoot-totals{white-space:nowrap;min-width:130px}.history .shoot-totals strong{font-size:14px}.history .shoot-totals span{font-size:13px}
+.shoot-notes-dialog{background:var(--card);color:var(--card-foreground);border:1px solid var(--border);border-radius:16px;padding:24px;box-shadow:0 20px 60px #17211b33}

@@ -11,12 +11,24 @@ export type Score = {
 };
 export type ShootStatus = "in_progress" | "complete";
 export type Shoot = {
+  notes?: { content: string; createdAt: string; updatedAt: string } | null;
   id: number;
   name: string;
   date: string;
   status: ShootStatus;
   scores: Score[];
 };
+
+export function shootTotals(shoot: Shoot) {
+  const main = shoot.scores.filter((score) => score.label.trim().toLowerCase() === "main");
+  const gauges: EventKey[] = ["12", "20", "28", "410"];
+  const complete = gauges.every((event) => main.some((score) => score.event === event));
+  const sum = (events: EventKey[]) => main.filter((score) => events.includes(score.event))
+    .reduce((total, score) => ({ broken: total.broken + score.broken, targets: total.targets + score.targets }), { broken: 0, targets: 0 });
+  const doubles = main.some((score) => score.event === "doubles");
+  return { hoa: complete ? sum(gauges) : null, hasDoubles: doubles,
+    haa: complete && doubles ? sum([...gauges, "doubles"]) : null };
+}
 export type StartingClasses = Partial<Record<EventKey, string>>;
 export type EventStats = {
   active: (Score & { date: string; name: string; status: ShootStatus })[];

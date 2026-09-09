@@ -3,13 +3,14 @@ import { getDb } from "@/db";
 import { shoots, eventScores, classSettings } from "@/db/schema";
 import { calculateStats } from "@/lib/scoring";
 import type { Shoot, StartingClasses } from "@/lib/scoring";
+import { attachNotes } from "@/lib/shoot-notes";
 
 export async function attachScores(rows: (typeof shoots.$inferSelect)[]): Promise<Shoot[]> {
   if (!rows.length) return [];
   const scores = await getDb().select().from(eventScores)
     .where(inArray(eventScores.shootId, rows.map((row) => row.id)))
     .orderBy(asc(eventScores.sequence), asc(eventScores.id));
-  return rows.map((row) => ({ ...row, scores: scores.filter((score) => score.shootId === row.id) }));
+  return attachNotes(rows.map((row) => ({ ...row, scores: scores.filter((score) => score.shootId === row.id) })));
 }
 
 export async function dashboardData() {
@@ -30,5 +31,5 @@ export async function dashboardData() {
   const allShoots = rows.map((row) => ({ ...row, scores: grouped.get(row.id) ?? [] }));
   const startingClasses = Object.fromEntries(settings.map((row) => [row.event, row.startingClass])) as StartingClasses;
   return { stats: calculateStats(allShoots, startingClasses), startingClasses,
-    inProgressShoots: allShoots.filter((row) => row.status === "in_progress").reverse() };
+    inProgressShoots: await attachNotes(allShoots.filter((row) => row.status === "in_progress").reverse()) };
 }

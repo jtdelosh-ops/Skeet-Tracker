@@ -1,6 +1,8 @@
+import { validateNotes, saveNotes } from "@/lib/shoot-notes";
+import { attachScores } from "@/lib/tracker-data";
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { eventScores, shoots } from "../../../db/schema";
+import { eventScores, shoots, shootNotes } from "../../../db/schema";
 const events = ["12", "20", "28", "410", "doubles"] as const;
 const statuses = ["in_progress", "complete"] as const;
 type ShootStatus = (typeof statuses)[number];
@@ -34,16 +36,7 @@ export async function GET() {
       .from(shoots)
       .orderBy(asc(shoots.date), asc(shoots.id));
     return Response.json({
-      shoots: await Promise.all(
-        rows.map(async (shoot) => ({
-          ...shoot,
-          scores: await db
-            .select()
-            .from(eventScores)
-            .where(eq(eventScores.shootId, shoot.id))
-            .orderBy(asc(eventScores.sequence), asc(eventScores.id)),
-        })),
-      ),
+      shoots: await attachScores(rows),
     });
   } catch (e) {
     return Response.json(
@@ -59,12 +52,15 @@ export async function POST(request: Request) {
       date: string;
       status?: string;
       entries?: SubmittedEntry[];
+      notes?: string;
     };
     if (!body.name?.trim() || !body.date)
       return Response.json(
         { error: "Shoot name and date are required" },
         { status: 400 },
       );
+    let notes;
+    try { notes = validateNotes(body.notes); } catch (error) { return Response.json({ error: (error as Error).message }, { status: 400 }); }
     const entries = validEntries(body.entries);
     const db = getDb();
     const [shoot] = await db
@@ -88,6 +84,7 @@ export async function POST(request: Request) {
           shotDate: entry.shotDate || body.date,
         })),
       );
+    await saveNotes(shoot.id, notes);
     return Response.json({ shoot }, { status: 201 });
   } catch (e) {
     return Response.json(
@@ -105,12 +102,15 @@ export async function PATCH(request: Request) {
       date: string;
       status?: string;
       entries?: SubmittedEntry[];
+      notes?: string;
     };
     if (!Number.isInteger(body.id) || !body.name?.trim() || !body.date)
       return Response.json(
         { error: "Valid shoot, name, and date are required" },
         { status: 400 },
       );
+    let notes;
+    try { notes = validateNotes(body.notes); } catch (error) { return Response.json({ error: (error as Error).message }, { status: 400 }); }
     const entries = validEntries(body.entries);
     const db = getDb();
     await db
@@ -137,6 +137,7 @@ export async function PATCH(request: Request) {
           })),
         );
     }
+    await saveNotes(body.id, notes);
     return Response.json({ ok: true });
   } catch (e) {
     return Response.json(
@@ -155,6 +156,7 @@ export async function DELETE(request: Request) {
         { status: 400 },
       );
     const db = getDb();
+    await db.delete(shootNotes).where(eq(shootNotes.shootId, id));
     await db.delete(eventScores).where(eq(eventScores.shootId, id));
     await db.delete(shoots).where(eq(shoots.id, id));
     return Response.json({ ok: true });

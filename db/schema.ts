@@ -38,3 +38,10 @@ export const classSettings = sqliteTable("class_settings", {
   event: text("event", { enum: ["12", "20", "28", "410", "doubles"] }).primaryKey(),
   startingClass: text("starting_class").notNull(),
 });
+
+export const shootNotes = sqliteTable("shoot_notes", {
+  shootId: integer("shoot_id").primaryKey().references(() => shoots.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
