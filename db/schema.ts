@@ -8,7 +8,7 @@ export const shoots = sqliteTable("shoots", {
   status: text("status", { enum: ["in_progress", "complete"] })
     .notNull()
     .default("complete"),
-});
+}, (table) => [index("idx_shoots_status_date_id").on(table.status, table.date, table.id)]);
 
 export const eventScores = sqliteTable(
   "event_scores",
@@ -37,4 +37,11 @@ export const eventScores = sqliteTable(
 export const classSettings = sqliteTable("class_settings", {
   event: text("event", { enum: ["12", "20", "28", "410", "doubles"] }).primaryKey(),
   startingClass: text("starting_class").notNull(),
+});
+
+export const shootNotes = sqliteTable("shoot_notes", {
+  shootId: integer("shoot_id").primaryKey().references(() => shoots.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
 });

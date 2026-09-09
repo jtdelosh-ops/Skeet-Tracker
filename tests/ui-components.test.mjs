@@ -12,7 +12,9 @@ const vite = await createServer({
   configFile: false,
   root,
   resolve: { alias: { "@": root } },
-  server: { middlewareMode: true },
+  cacheDir: ".sites-runtime/test-cache/ui-components",
+  optimizeDeps: { noDiscovery: true },
+  server: { middlewareMode: true, hmr: false },
 });
 
 after(async () => {

@@ -10,7 +10,9 @@ const vite = await createServer({
   configFile: false,
   root,
   resolve: { alias: { "@": root } },
-  server: { middlewareMode: true },
+  cacheDir: ".sites-runtime/test-cache/preliminary",
+  optimizeDeps: { noDiscovery: true },
+  server: { middlewareMode: true, hmr: false },
 });
 
 after(async () => {
@@ -37,7 +39,7 @@ const shoot = (id, status, scores) => ({
 });
 
 test("combines preliminary and main targets in shoot history", async () => {
-  const { summarizeShootGauge } = await vite.ssrLoadModule("/app/page.tsx");
+  const { summarizeShootGauge } = await vite.ssrLoadModule("/lib/scoring.ts");
   const event = shoot(1, "complete", [
     score(1, 96, 100, "Main", 0),
     score(2, 48, 50, "Preliminary", 1),
@@ -53,7 +55,7 @@ test("combines preliminary and main targets in shoot history", async () => {
 });
 
 test("keeps a preliminary and main as separate rolling events in shoot order", async () => {
-  const { calculateStats } = await vite.ssrLoadModule("/app/page.tsx");
+  const { calculateStats } = await vite.ssrLoadModule("/lib/scoring.ts");
   const shoots = [1, 2, 3, 4].map((id) =>
     shoot(id, "complete", [score(id, 93)]),
   );
@@ -76,7 +78,7 @@ test("keeps a preliminary and main as separate rolling events in shoot order", a
 
 test("defers an in-progress preliminary class change and notification", async () => {
   const { calculateStats, findClassChanges } = await vite.ssrLoadModule(
-    "/app/page.tsx",
+    "/lib/scoring.ts",
   );
   const history = [1, 2, 3, 4, 5].map((id) =>
     shoot(id, "complete", [score(id, 93)]),
