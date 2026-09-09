@@ -1,0 +1,1 @@
+CREATE INDEX `idx_shoots_status_date_id` ON `shoots` (`status`,`date`,`id`);

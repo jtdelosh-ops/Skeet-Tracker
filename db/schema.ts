@@ -8,7 +8,7 @@ export const shoots = sqliteTable("shoots", {
   status: text("status", { enum: ["in_progress", "complete"] })
     .notNull()
     .default("complete"),
-});
+}, (table) => [index("idx_shoots_status_date_id").on(table.status, table.date, table.id)]);
 
 export const eventScores = sqliteTable(
   "event_scores",

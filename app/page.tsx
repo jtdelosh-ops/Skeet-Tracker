@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -30,295 +30,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-type EventKey = "12" | "20" | "28" | "410" | "doubles";
-type Score = {
-  id: number;
-  event: EventKey;
-  broken: number;
-  targets: number;
-  label: string;
-  sequence: number;
-  classShot: string | null;
-  shotDate: string | null;
-};
-type ShootStatus = "in_progress" | "complete";
-type Shoot = {
-  id: number;
-  name: string;
-  date: string;
-  status: ShootStatus;
-  scores: Score[];
-};
-type StartingClasses = Partial<Record<EventKey, string>>;
-type EventStats = {
-  active: (Score & { date: string; name: string; status: ShootStatus })[];
-  average: number;
-  classificationAverage: number;
-  className: string;
-  mathematicalClass: string;
-  provisional: boolean;
-};
-type ClassChange = {
-  event: EventKey;
-  label: string;
-  from: string;
-  to: string;
-  average: number;
-  direction: "up" | "down";
-};
-type Entry = {
-  event: EventKey;
-  label: string;
-  broken: string;
-  targets: string;
-  classShot: string;
-  shotDate: string;
-  removable: boolean;
-};
-const info: Record<
-  EventKey,
-  { label: string; short: string; t: [string, number][] }
-> = {
-  "12": {
-    label: "12 Gauge",
-    short: "12",
-    t: [
-      ["AAA", 0.985],
-      ["AA", 0.975],
-      ["A", 0.96],
-      ["B", 0.935],
-      ["C", 0.9],
-      ["D", 0.855],
-      ["E", 0],
-    ],
-  },
-  "20": {
-    label: "20 Gauge",
-    short: "20",
-    t: [
-      ["AAA", 0.9825],
-      ["AA", 0.97],
-      ["A", 0.945],
-      ["B", 0.91],
-      ["C", 0.855],
-      ["D", 0],
-    ],
-  },
-  "28": {
-    label: "28 Gauge",
-    short: "28",
-    t: [
-      ["AAA", 0.98],
-      ["AA", 0.965],
-      ["A", 0.94],
-      ["B", 0.905],
-      ["C", 0.855],
-      ["D", 0],
-    ],
-  },
-  "410": {
-    label: ".410 Bore",
-    short: ".410",
-    t: [
-      ["AAA", 0.965],
-      ["AA", 0.945],
-      ["A", 0.91],
-      ["B", 0.86],
-      ["C", 0.8],
-      ["D", 0],
-    ],
-  },
-  doubles: {
-    label: "Doubles",
-    short: "DBLS",
-    t: [
-      ["AAA", 0.97],
-      ["AA", 0.95],
-      ["A", 0.91],
-      ["B", 0.85],
-      ["C", 0.8],
-      ["D", 0],
-    ],
-  },
-};
-const keys = Object.keys(info) as EventKey[];
-const hoa4: [string, number][] = [
-    ["AAA", 0.9781],
-    ["AA", 0.9638],
-    ["A", 0.9388],
-    ["B", 0.9025],
-    ["C", 0.8525],
-    ["D", 0.7925],
-    ["E", 0],
-  ],
-  hoa5: [string, number][] = [
-    ["AAA", 0.9764],
-    ["AA", 0.961],
-    ["A", 0.933],
-    ["B", 0.892],
-    ["C", 0.842],
-    ["D", 0.782],
-    ["E", 0],
-  ];
-const classOrder = ["AAA", "AA", "A", "B", "C", "D", "E"];
-const round4 = (n: number) => Math.round((n + Number.EPSILON) * 10000) / 10000;
-const cls = (a: number, t: [string, number][]) =>
-    t.find(([, f]) => round4(a) >= f)?.[0] ?? "—",
-  fmt = (n: number) => round4(n).toFixed(4).replace(/^0/, "");
-const ruleClass = (
-  event: EventKey,
-  mathematical: string,
-  startingClass?: string,
-) => {
-  if (!startingClass) return mathematical;
-  const floor =
-    classOrder[
-      Math.min(
-        classOrder.indexOf(startingClass) + 1,
-        event === "12" ? 6 : 5,
-      )
-    ];
-  return classOrder[
-    Math.min(classOrder.indexOf(mathematical), classOrder.indexOf(floor))
-  ];
-};
-const hoaSafeguard = (mathematical: string, componentClasses: string[]) => {
-  const lowestGun = Math.max(
-    ...componentClasses.map((c) => classOrder.indexOf(c)),
-  );
-  return classOrder[Math.min(classOrder.indexOf(mathematical), lowestGun)];
-};
-const defaults = (shotDate = "") =>
-  keys.map((event) => ({
-    event,
-    label: "Main",
-    broken: "",
-    targets: "100",
-    classShot: "",
-    shotDate,
-    removable: false,
-  })) as Entry[];
-const isPreliminary = (score: Pick<Score, "label">) =>
-  score.label.trim().toLowerCase() === "preliminary";
-
-const orderedScores = (shoot: Shoot, event: EventKey) =>
-  shoot.scores
-    .filter((score) => score.event === event)
-    .sort((a, b) => {
-      const eventOrder = Number(isPreliminary(b)) - Number(isPreliminary(a));
-      return eventOrder || a.sequence - b.sequence || a.id - b.id;
-    })
-    .map((score) => ({
-      ...score,
-      date: score.shotDate ?? shoot.date,
-      name: shoot.name,
-      status: shoot.status,
-    }));
-
-export const calculateStats = (
-  shoots: Shoot[],
-  startingClasses: StartingClasses,
-) =>
-  Object.fromEntries(
-    keys.map((event) => {
-      const scoredEvents = shoots.flatMap((shoot) =>
-          orderedScores(shoot, event),
-        ),
-        active = scoredEvents
-          .slice(-5),
-        broken = active.reduce((total, score) => total + score.broken, 0),
-        targets = active.reduce((total, score) => total + score.targets, 0),
-        average = targets ? broken / targets : 0,
-        classificationActive = scoredEvents
-          .filter(
-            (score) => score.status === "complete" || !isPreliminary(score),
-          )
-          .slice(-5),
-        classificationBroken = classificationActive.reduce(
-          (total, score) => total + score.broken,
-          0,
-        ),
-        classificationTargets = classificationActive.reduce(
-          (total, score) => total + score.targets,
-          0,
-        ),
-        classificationAverage = classificationTargets
-          ? classificationBroken / classificationTargets
-          : 0,
-        mathematicalClass = classificationTargets
-          ? cls(classificationAverage, info[event].t)
-          : "—",
-        className = classificationTargets
-          ? ruleClass(event, mathematicalClass, startingClasses[event])
-          : startingClasses[event] ?? "—";
-      return [
-        event,
-        {
-          active,
-          average,
-          classificationAverage,
-          mathematicalClass,
-          className,
-          provisional: scoredEvents.some(
-            (score) => score.status === "in_progress" && isPreliminary(score),
-          ),
-        },
-      ];
-    }),
-  ) as Record<EventKey, EventStats>;
-
-export const findClassChanges = (
-  previous: Record<EventKey, EventStats>,
-  next: Record<EventKey, EventStats>,
-  startingClasses: StartingClasses,
-) =>
-  keys.flatMap((event): ClassChange[] => {
-    const before = previous[event],
-      after = next[event],
-      beforeIndex = classOrder.indexOf(before.className),
-      afterIndex = classOrder.indexOf(after.className);
-    if (
-      before.className === after.className ||
-      beforeIndex < 0 ||
-      afterIndex < 0 ||
-      (!before.active.length && !startingClasses[event])
-    )
-      return [];
-    return [
-      {
-        event,
-        label: info[event].label,
-        from: before.className,
-        to: after.className,
-        average: after.classificationAverage,
-        direction: afterIndex < beforeIndex ? "up" : "down",
-      },
-    ];
-  });
-
-export const summarizeShootGauge = (shoot: Shoot, event: EventKey) => {
-  const rows = shoot.scores.filter((score) => score.event === event);
-  return rows.length
-    ? {
-        broken: rows.reduce((total, score) => total + score.broken, 0),
-        targets: rows.reduce((total, score) => total + score.targets, 0),
-        count: rows.length,
-        classes: [
-          ...new Set(
-            rows
-              .map((score) => score.classShot)
-              .filter((classShot): classShot is string => Boolean(classShot)),
-          ),
-        ],
-        dates: [
-          ...new Set(rows.map((score) => score.shotDate ?? shoot.date)),
-        ],
-      }
-    : null;
-};
+import { calculateStats, findClassChanges, summarizeShootGauge, defaults, keys, info, classOrder, hoa4, hoa5, hoaSafeguard, cls, fmt } from "@/lib/scoring";
+import type { Shoot, ShootStatus, EventKey, Entry, StartingClasses, ClassChange, EventStats } from "@/lib/scoring";
+import { TrackerBrand } from "@/components/tracker-brand";
+import { useHistory } from "@/hooks/use-history";
 
 export default function Home() {
-  const [shoots, setShoots] = useState<Shoot[]>([]),
+  const [inProgressShoots, setInProgressShoots] = useState<Shoot[]>([]),
     [loading, setLoading] = useState(true),
     [show, setShow] = useState(false),
     [showSettings, setShowSettings] = useState(false),
@@ -334,40 +52,26 @@ export default function Home() {
   const [name, setName] = useState(""),
     [date, setDate] = useState(""),
     [entries, setEntries] = useState<Entry[]>(defaults());
-  const requestTrackerData = () =>
-    Promise.all([fetch("/api/shoots"), fetch("/api/settings")]).then(
-      async ([shootResponse, settingsResponse]) => {
-        const [shootData, settingsData] = await Promise.all([
-          shootResponse.json(),
-          settingsResponse.json(),
-        ]);
-        if (!shootResponse.ok) throw Error(shootData.error);
-        if (!settingsResponse.ok) throw Error(settingsData.error);
-        return {
-          shoots: shootData.shoots as Shoot[],
-          startingClasses: settingsData.startingClasses as StartingClasses,
-        };
-      },
-    );
-  const load = () =>
-    requestTrackerData()
-      .then((data) => {
-        setShoots(data.shoots);
-        setStartingClasses(data.startingClasses);
-        setDraftStartingClasses(data.startingClasses);
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  useEffect(load, []);
+  const [stats, setStats] = useState<Record<EventKey, EventStats>>(() => calculateStats([], {}));
+  const history = useHistory();
+  const requestTrackerData = async () => {
+    const response = await fetch("/api/dashboard");
+    const data = await response.json();
+    if (!response.ok) throw Error(data.error);
+    return data as { stats: Record<EventKey, EventStats>; startingClasses: StartingClasses; inProgressShoots: Shoot[] };
+  };
+  const load = useCallback(() => requestTrackerData().then((data) => {
+    setStats(data.stats);
+    setInProgressShoots(data.inProgressShoots);
+    setStartingClasses(data.startingClasses);
+    setDraftStartingClasses(data.startingClasses);
+  }).catch((e) => setError(e.message)).finally(() => setLoading(false)), []);
+  useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     if (!rankDowns.length || rankUps.length) return;
     const timeout = window.setTimeout(() => setRankDowns([]), 7000);
     return () => window.clearTimeout(timeout);
   }, [rankDowns, rankUps]);
-  const stats = useMemo(
-    () => calculateStats(shoots, startingClasses),
-    [shoots, startingClasses],
-  );
   const hoaReady = (["12", "20", "28", "410"] as EventKey[]).every(
       (event) => stats[event].active.length > 0,
     ),
@@ -458,6 +162,7 @@ export default function Home() {
     const d = await r.json();
     if (!r.ok) return setError(d.error);
     await load();
+    history.refresh();
   };
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -493,12 +198,11 @@ export default function Home() {
       if (!r.ok) throw Error(d.error);
       closeForm();
       const nextData = await requestTrackerData(),
-        nextStats = calculateStats(
-          nextData.shoots,
-          nextData.startingClasses,
-        ),
+        nextStats = nextData.stats,
         changes = findClassChanges(stats, nextStats, startingClasses);
-      setShoots(nextData.shoots);
+      setStats(nextStats);
+      setInProgressShoots(nextData.inProgressShoots);
+      history.refresh();
       setStartingClasses(nextData.startingClasses);
       setDraftStartingClasses(nextData.startingClasses);
       setRankUps(changes.filter((change) => change.direction === "up"));
@@ -528,24 +232,17 @@ export default function Home() {
       if (!response.ok) throw Error(data.error);
       setStartingClasses(data.startingClasses);
       setShowSettings(false);
+      await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to save settings");
     } finally {
       setSavingSettings(false);
     }
   }
-  const inProgressShoots = [...shoots]
-      .reverse()
-      .filter((shoot) => shoot.status === "in_progress"),
-    completedShoots = shoots.filter((shoot) => shoot.status === "complete");
   return (
     <main>
       <header>
-        <div>
-          <p className="eyebrow">NSSA SKEET TRACKER</p>
-          <h1>Skeet record</h1>
-          <p className="sub">Rolling averages · classes · tournament history</p>
-        </div>
+        <TrackerBrand />
         <div className="header-actions">
           <Button variant="outline" onClick={openSettings} className="settings-button">
             <Settings2 /> Class settings
@@ -956,10 +653,20 @@ export default function Home() {
         <div className="section-title">
           <div>
             <p className="eyebrow">TOURNAMENT HISTORY</p>
-            <h2>{completedShoots.length} completed shoots</h2>
+            <h2>Tournament history</h2>
           </div>
           <Target />
         </div>
+        <div className="history-search">
+          <label htmlFor="history-query">Search tournament history</label>
+          <div className="search-field">
+            <Input id="history-query" type="search" placeholder="Search shoot name or year" value={history.query} maxLength={200} onChange={(e) => history.search(e.target.value)} />
+            {history.query && <Button variant="outline" aria-label="Clear search" onClick={() => history.search("")}><X aria-hidden="true" /></Button>}
+          </div>
+        </div>
+        {history.error && <div className="error" role="alert">{history.error} <Button variant="outline" onClick={history.refresh}>Retry</Button></div>}
+        <p className="history-status" role="status" aria-live="polite">{history.loading ? "Loading shoots…" : history.data ? history.data.total ? `Showing ${(history.data.page - 1) * 10 + 1}–${Math.min(history.data.page * 10, history.data.total)} of ${history.data.total} shoots` : history.query.trim() ? "No shoots match your search." : "No shoots yet." : ""}</p>
+        {!history.loading && history.data?.total === 0 && history.query.trim() && <Button variant="outline" onClick={() => history.search("")}>Clear search</Button>}
         <Table>
           <TableHeader>
             <TableRow>
@@ -970,7 +677,7 @@ export default function Home() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {[...completedShoots].reverse().map((s) => (
+            {(history.data?.shoots ?? []).map((s) => (
               <TableRow key={s.id}>
                 <TableCell>
                   <strong>
@@ -1027,6 +734,11 @@ export default function Home() {
             ))}
           </TableBody>
         </Table>
+        <nav className="history-pagination" aria-label="Tournament history pages">
+          <Button variant="outline" disabled={history.loading || !history.data || history.data.page <= 1} onClick={() => history.navigate((history.data?.page ?? 1) - 1)}>Previous</Button>
+          <span>Page {history.data?.page ?? 1} of {history.data?.pages ?? 1}</span>
+          <Button variant="outline" disabled={history.loading || !history.data || history.data.page >= history.data.pages} onClick={() => history.navigate((history.data?.page ?? 1) + 1)}>Next</Button>
+        </nav>
       </section>
       <footer>
         Classes calculated with the 2026 NSSA Universal Classification Tables.
