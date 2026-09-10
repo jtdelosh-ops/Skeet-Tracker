@@ -1,4 +1,5 @@
-import { integer, sqliteTable, text, index, primaryKey } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, index, primaryKey, uniqueIndex, check } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -50,17 +51,28 @@ export const loginSessions = sqliteTable("login_sessions", {
 export const loginLimits = sqliteTable("login_limits", {
   key: text("key").primaryKey(), count: integer("count").notNull(), expiresAt: integer("expires_at").notNull(),
 });
+export const importBatches=sqliteTable("import_batches",{
+  id:text("id").primaryKey(),ownerId:text("owner_id").notNull().references(()=>users.id),
+  actorId:text("actor_id").notNull().references(()=>users.id),source:text("source").notNull(),
+  digest:text("digest").notNull(),
+  createdAt:integer("created_at").notNull(),undoneAt:integer("undone_at"),total:integer("total").notNull(),
+},table=>[check("import_total_nonnegative",sql`${table.total} >= 0`),index("idx_import_batches_owner_created").on(table.ownerId,table.createdAt)]);
+export const importRecords=sqliteTable("import_records",{
+  batchId:text("batch_id").notNull().references(()=>importBatches.id),shootId:integer("shoot_id").notNull(),snapshot:text("snapshot").notNull(),
+},table=>[primaryKey({columns:[table.batchId,table.shootId]})]);
 
 export const shoots = sqliteTable("shoots", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   ownerId: text("owner_id").references(() => users.id),
+  importBatchId:text("import_batch_id").references(()=>importBatches.id),
+  importKey:text("import_key"),
   shootNumber: integer("shoot_number"),
   name: text("name").notNull(),
   date: text("date").notNull(),
   status: text("status", { enum: ["in_progress", "complete"] })
     .notNull()
     .default("complete"),
-}, (table) => [index("idx_shoots_status_date_id").on(table.status, table.date, table.id), index("idx_shoots_owner_date_id").on(table.ownerId,table.date,table.id)]);
+}, (table) => [index("idx_shoots_status_date_id").on(table.status, table.date, table.id), index("idx_shoots_owner_date_id").on(table.ownerId,table.date,table.id),uniqueIndex("idx_shoots_owner_import_key").on(table.ownerId,table.importKey),index("idx_shoots_import_batch").on(table.importBatchId)]);
 
 export const eventScores = sqliteTable(
   "event_scores",
