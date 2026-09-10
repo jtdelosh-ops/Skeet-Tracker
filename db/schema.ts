@@ -1,5 +1,18 @@
 import { integer, sqliteTable, text, index } from "drizzle-orm/sqlite-core";
 
+export const loginChallenges = sqliteTable("login_challenges", {
+  id: text("id").primaryKey(), email: text("email").notNull(), digest: text("digest").notNull(),
+  expiresAt: integer("expires_at").notNull(), attempts: integer("attempts").notNull().default(0),
+  consumed: integer("consumed").notNull().default(0), createdAt: integer("created_at").notNull(),
+});
+export const loginSessions = sqliteTable("login_sessions", {
+  digest: text("digest").primaryKey(), email: text("email").notNull(),
+  expiresAt: integer("expires_at").notNull(), createdAt: integer("created_at").notNull(),
+});
+export const loginLimits = sqliteTable("login_limits", {
+  key: text("key").primaryKey(), count: integer("count").notNull(), expiresAt: integer("expires_at").notNull(),
+});
+
 export const shoots = sqliteTable("shoots", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   shootNumber: integer("shoot_number"),

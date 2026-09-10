@@ -16,6 +16,7 @@ export default function RootLayout({
           <span style={{ display: "block" }}>Test records only. Entries here do not transfer to your live tracker.</span>
         </aside>
         {children}
+        <form action="/api/auth/logout" method="post" style={{textAlign:"center",padding:16}}><button type="submit">Sign out of tracker</button></form>
       </body>
     </html>
   );
