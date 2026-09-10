@@ -12,7 +12,7 @@ export default function Login() {
     setBusy(true); setMessage("");
     try {
       const response=await fetch(`/api/auth/${verify?"verify":"request"}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(verify?{challenge,code,remember}:{email})});
-      const result=await response.json();
+      const result=await response.json() as {error?:string;challenge:string;message:string};
       if(!response.ok) throw Error(result.error || "Unable to sign in.");
       if(verify) window.location.assign("/");
       else {setChallenge(result.challenge);setCode("");setMessage(result.message);}

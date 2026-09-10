@@ -1,10 +1,11 @@
+import { ensureOwnerAccount, OWNER_EMAIL, type Account } from "./accounts";
 export interface LoginEnv {
   DB: D1Database;
   RESEND_API_KEY?: string;
   AUTH_SECRET?: string;
   APP_ORIGIN?: string;
 }
-const OWNER = "jtdelosh@gmail.com";
+const OWNER = OWNER_EMAIL;
 const COOKIE = "__Host-skeet-session";
 const json = (data: unknown, status = 200, headers: Record<string,string> = {}) => Response.json(data, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2,"0")).join("");
@@ -18,7 +19,12 @@ export async function currentSession(request: Request, env: LoginEnv) {
   if (!env.AUTH_SECRET) return null;
   const raw = request.headers.get("cookie")?.split(";").map(s => s.trim()).find(s => s.startsWith(`${COOKIE}=`))?.slice(COOKIE.length+1);
   if (!raw || !/^[a-f0-9]{64}$/.test(raw)) return null;
-  return env.DB.prepare("SELECT email, expires_at FROM login_sessions WHERE digest = ? AND expires_at > ? AND email = ?").bind(await digest(`session:${raw}`,env.AUTH_SECRET),Date.now(),OWNER).first<{email:string;expires_at:number}>();
+  const sessionDigest=await digest(`session:${raw}`,env.AUTH_SECRET);
+  const session=await env.DB.prepare("SELECT email, expires_at FROM login_sessions WHERE digest = ? AND expires_at > ?").bind(sessionDigest,Date.now()).first<{email:string;expires_at:number}>();
+  if(!session) return null;
+  if(session.email===OWNER) await ensureOwnerAccount(env.DB);
+  return env.DB.prepare("SELECT u.id,u.email,u.role,u.display_name AS displayName,s.expires_at FROM users u JOIN login_sessions s ON s.email=u.email WHERE s.digest=? AND s.expires_at>? AND u.disabled=0")
+    .bind(sessionDigest,Date.now()).first<Account>();
 }
 async function limit(env: LoginEnv, key: string, max: number, interval: number) {
   const now=Date.now();
@@ -30,7 +36,7 @@ export async function loginRoute(request: Request, env: LoginEnv): Promise<Respo
   if (!env.AUTH_SECRET || !env.APP_ORIGIN) return json({error:"Sign-in is not configured yet."},503);
   if (path==="/api/auth/session" && request.method==="GET") {
     const session=await currentSession(request,env);
-    return session ? json({email:session.email}) : json({error:"Please sign in."},401);
+    return session ? json({email:session.email,displayName:session.displayName,role:session.role}) : json({error:"Please sign in."},401);
   }
   if (request.method!=="POST") return json({error:"Method not allowed."},405);
   if (request.headers.get("origin")!==env.APP_ORIGIN) return json({error:"Invalid request origin."},403);
@@ -52,6 +58,8 @@ export async function loginRoute(request: Request, env: LoginEnv): Promise<Respo
     const id=token(), now=Date.now();
     // Initial milestone deliberately admits only the owner. No platform identity bypass.
     if(email!==OWNER) return json({challenge:id,message:"If this address has access, a code will arrive shortly."});
+    const disabled=await env.DB.prepare("SELECT disabled FROM users WHERE email=?").bind(email).first<{disabled:number}>();
+    if(disabled?.disabled) return json({challenge:id,message:"If this address has access, a code will arrive shortly."});
     if(!env.RESEND_API_KEY) return json({error:"Email delivery is not configured."},503);
     if(!await limit(env,"owner-minute",1,60000) || !await limit(env,"owner-hour",5,3600000) || !await limit(env,"send-day",80,86400000)) return json({error:"Please wait before requesting another code."},429);
     // Rejection sampling avoids modulo bias.
@@ -77,6 +85,9 @@ export async function loginRoute(request: Request, env: LoginEnv): Promise<Respo
   // One atomic statement counts attempts and consumes a valid challenge under concurrent requests.
   const found=await env.DB.prepare("UPDATE login_challenges SET attempts=attempts+1, consumed=CASE WHEN digest=? THEN 1 ELSE 0 END WHERE id=? AND email=? AND expires_at>? AND consumed=0 AND attempts<5 RETURNING email,consumed").bind(expected,body.challenge,OWNER,now).first<{email:string;consumed:number}>();
   if(!found?.consumed) return json({error:"Code is invalid, expired, or already used. Request a new code if needed."},400);
+  await ensureOwnerAccount(env.DB);
+  const user=await env.DB.prepare("SELECT id FROM users WHERE email=? AND disabled=0").bind(found.email).first();
+  if(!user) return json({error:"Account is unavailable."},403);
   const raw=token(), age=body.remember===true?2592000:43200;
   await env.DB.prepare("INSERT INTO login_sessions (digest,email,expires_at,created_at) VALUES (?,?,?,?)").bind(await digest(`session:${raw}`,env.AUTH_SECRET),found.email,now+age*1000,now).run();
   return json({ok:true},200,{"Set-Cookie":cookie(raw,age)});

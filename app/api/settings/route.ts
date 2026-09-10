@@ -1,5 +1,7 @@
 import { getDb } from "../../../db";
-import { classSettings } from "../../../db/schema";
+import { userClassSettings as classSettings } from "../../../db/schema";
+import { eq } from "drizzle-orm";
+import { requestAccount } from "@/lib/request-account";
 
 const events = ["12", "20", "28", "410", "doubles"] as const;
 type EventKey = (typeof events)[number];
@@ -13,9 +15,10 @@ const validClasses: Record<EventKey, readonly string[]> = {
   doubles: ["AAA", "AA", "A", "B", "C", "D"],
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  const account=await requestAccount(request); if(account instanceof Response) return account;
   try {
-    const rows = await getDb().select().from(classSettings);
+    const rows = await getDb().select().from(classSettings).where(eq(classSettings.userId,account.id));
     return Response.json({
       startingClasses: Object.fromEntries(
         rows.map((row) => [row.event, row.startingClass]),
@@ -30,6 +33,7 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
+  const account=await requestAccount(request); if(account instanceof Response) return account;
   try {
     const body = (await request.json()) as { startingClasses?: StartingClasses };
     const submitted = body.startingClasses ?? {};
@@ -39,12 +43,12 @@ export async function PUT(request: Request) {
       if (!validClasses[event].includes(startingClass)) {
         throw new Error(`Invalid starting class for ${event}`);
       }
-      return [{ event, startingClass }];
+      return [{ userId:account.id, event, startingClass }];
     });
 
     const db = getDb();
-    await db.delete(classSettings);
-    if (rows.length) await db.insert(classSettings).values(rows);
+    if(rows.length) await db.batch([db.delete(classSettings).where(eq(classSettings.userId,account.id)),db.insert(classSettings).values(rows)]);
+    else await db.delete(classSettings).where(eq(classSettings.userId,account.id));
 
     return Response.json({ startingClasses: submitted });
   } catch (error) {

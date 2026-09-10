@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AccountStatus } from "@/components/account-status";
 
 export const metadata: Metadata = { title: "TEST — NSSA Skeet Tracker", description: "Private user-account testing environment. Test records only.", robots: { index: false, follow: false } };
 
@@ -15,6 +16,7 @@ export default function RootLayout({
           <strong>TEST SITE — User Accounts</strong>
           <span style={{ display: "block" }}>Test records only. Entries here do not transfer to your live tracker.</span>
         </aside>
+        <AccountStatus />
         {children}
         <form action="/api/auth/logout" method="post" style={{textAlign:"center",padding:16}}><button type="submit">Sign out of tracker</button></form>
       </body>

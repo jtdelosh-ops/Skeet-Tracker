@@ -34,7 +34,7 @@ export function useHistory() {
     try {
       const params = new URLSearchParams({ q, page: String(page) });
       const response = await fetch(`/api/history?${params}`, { signal: current.signal });
-      const result = await response.json();
+      const result = await response.json() as HistoryData & {error?:string};
       if (!response.ok) throw Error(result.error ?? "Unable to load history.");
       if (!current.isCurrent()) return;
       setData(result);

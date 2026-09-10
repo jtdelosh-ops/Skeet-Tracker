@@ -1,4 +1,22 @@
-import { integer, sqliteTable, text, index } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, index, primaryKey } from "drizzle-orm/sqlite-core";
+
+export const users = sqliteTable("users", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  role: text("role", { enum: ["admin", "shooter"] }).notNull().default("shooter"),
+  disabled: integer("disabled").notNull().default(0),
+  createdAt: integer("created_at").notNull(),
+});
+export const userClassSettings = sqliteTable("user_class_settings", {
+  userId: text("user_id").notNull().references(() => users.id),
+  event: text("event", { enum: ["12", "20", "28", "410", "doubles"] }).notNull(),
+  startingClass: text("starting_class").notNull(),
+}, (table) => [primaryKey({columns:[table.userId,table.event]})]);
+export const accountMigrations = sqliteTable("account_migrations", {
+  key: text("key").primaryKey(), userId: text("user_id").notNull().references(() => users.id),
+  completedAt: integer("completed_at").notNull(),
+});
 
 export const loginChallenges = sqliteTable("login_challenges", {
   id: text("id").primaryKey(), email: text("email").notNull(), digest: text("digest").notNull(),
@@ -15,13 +33,14 @@ export const loginLimits = sqliteTable("login_limits", {
 
 export const shoots = sqliteTable("shoots", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  ownerId: text("owner_id").references(() => users.id),
   shootNumber: integer("shoot_number"),
   name: text("name").notNull(),
   date: text("date").notNull(),
   status: text("status", { enum: ["in_progress", "complete"] })
     .notNull()
     .default("complete"),
-}, (table) => [index("idx_shoots_status_date_id").on(table.status, table.date, table.id)]);
+}, (table) => [index("idx_shoots_status_date_id").on(table.status, table.date, table.id), index("idx_shoots_owner_date_id").on(table.ownerId,table.date,table.id)]);
 
 export const eventScores = sqliteTable(
   "event_scores",

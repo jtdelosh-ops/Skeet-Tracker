@@ -60,7 +60,7 @@ export default function Home() {
   const history = useHistory();
   const requestTrackerData = async () => {
     const response = await fetch("/api/dashboard");
-    const data = await response.json();
+    const data = await response.json() as { error?: string; stats: Record<EventKey, EventStats>; startingClasses: StartingClasses; inProgressShoots: Shoot[] };
     if (!response.ok) throw Error(data.error);
     return data as { stats: Record<EventKey, EventStats>; startingClasses: StartingClasses; inProgressShoots: Shoot[] };
   };
@@ -166,7 +166,7 @@ export default function Home() {
   const deleteShoot = async (shoot: Shoot) => {
     if (!window.confirm(`Delete ${shoot.name}? This cannot be undone.`)) return;
     const r = await fetch(`/api/shoots?id=${shoot.id}`, { method: "DELETE" });
-    const d = await r.json();
+    const d = await r.json() as {error: string};
     if (!r.ok) return setError(d.error);
     await load();
     history.refresh();
@@ -202,7 +202,7 @@ export default function Home() {
             entries: payload,
           }),
         }),
-        d = await r.json();
+        d = await r.json() as {error: string};
       if (!r.ok) throw Error(d.error);
       closeForm();
       const nextData = await requestTrackerData(),
@@ -236,7 +236,7 @@ export default function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ startingClasses: draftStartingClasses }),
       });
-      const data = await response.json();
+      const data = await response.json() as { error?: string; stats: Record<EventKey, EventStats>; startingClasses: StartingClasses; inProgressShoots: Shoot[] };
       if (!response.ok) throw Error(data.error);
       setStartingClasses(data.startingClasses);
       setShowSettings(false);
