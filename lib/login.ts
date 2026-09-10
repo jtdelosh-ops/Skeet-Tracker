@@ -31,6 +31,11 @@ export async function limit(env: LoginEnv, key: string, max: number, interval: n
   const row=await env.DB.prepare("INSERT INTO login_limits (key,count,expires_at) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN expires_at <= ? THEN 1 ELSE count+1 END, expires_at=CASE WHEN expires_at <= ? THEN excluded.expires_at ELSE expires_at END RETURNING count").bind(key,now+interval,now,now).first<{count:number}>();
   return !!row && row.count<=max;
 }
+async function invitedAccount(code:unknown, env:LoginEnv) {
+  if(typeof code!=="string" || !/^[a-f0-9]{64}$/.test(code.trim())) return null;
+  return env.DB.prepare("SELECT id,email,expires_at FROM invitations WHERE digest=? AND expires_at>? AND revoked_at IS NULL AND redeemed_at IS NULL AND NOT EXISTS (SELECT 1 FROM users WHERE users.email=invitations.email)")
+    .bind(await digest(`invite:${code.trim()}`,env.AUTH_SECRET!),Date.now()).first<{id:string;email:string;expires_at:number}>();
+}
 export async function loginRoute(request: Request, env: LoginEnv): Promise<Response> {
   const path=new URL(request.url).pathname;
   if (!env.AUTH_SECRET || !env.APP_ORIGIN) return json({error:"Sign-in is not configured yet."},503);
@@ -45,15 +50,24 @@ export async function loginRoute(request: Request, env: LoginEnv): Promise<Respo
     if(raw) await env.DB.prepare("DELETE FROM login_sessions WHERE digest = ?").bind(await digest(`session:${raw}`,env.AUTH_SECRET)).run();
     return new Response(null,{status:303,headers:{Location:"/login","Set-Cookie":cookie("",0),"Cache-Control":"no-store"}});
   }
-  if(!["/api/auth/request","/api/auth/verify"].includes(path)) return json({error:"Not found."},404);
+  if(!["/api/auth/request","/api/auth/verify","/api/auth/invitation"].includes(path)) return json({error:"Not found."},404);
   if(!request.headers.get("content-type")?.includes("application/json")) return json({error:"JSON required."},415);
   const input=await request.text();
   if(input.length>2048) return json({error:"Request too large."},413);
   let body: {email?:string; challenge?:string; code?:string; remember?:boolean; inviteCode?:string; displayName?:string; acceptSupportAccess?:boolean};
   try {body=JSON.parse(input);} catch {return json({error:"Invalid request."},400);}
   if(!body || typeof body!=="object") return json({error:"Invalid request."},400);
+  if(path==="/api/auth/invitation") {
+    const invite=await invitedAccount(body.inviteCode,env);
+    return invite?json({email:invite.email}):json({error:"This invitation is invalid, expired, or already used. Ask James for a new invitation, or sign in if you already have an account."},400);
+  }
   if(path==="/api/auth/request") {
-    const email=typeof body.email==="string"?body.email.trim().toLowerCase():"";
+    const invite=body.inviteCode!==undefined?await invitedAccount(body.inviteCode,env):null;
+    if(body.inviteCode!==undefined && !invite) return json({error:"This invitation is invalid, expired, or already used. Ask James for a new invitation."},400);
+    // Signup identity comes from the stored invitation, never an editable field.
+    const suppliedEmail=typeof body.email==="string"?body.email.trim().toLowerCase():"";
+    if(invite && suppliedEmail && suppliedEmail!==invite.email) return json({error:"This invitation belongs to a different email address."},400);
+    const email=invite?.email??suppliedEmail;
     if(email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({error:"Enter a valid email address."},400);
     const id=token(), now=Date.now();
     let invitationId: string|null=null, displayName: string|null=null;
@@ -62,9 +76,6 @@ export async function loginRoute(request: Request, env: LoginEnv): Promise<Respo
       displayName=typeof body.displayName==="string"?body.displayName.trim():"";
       if(!displayName || displayName.length>80 || /[\u0000-\u001f\u007f]/.test(displayName)) return json({error:"Enter a display name between 1 and 80 characters."},400);
       if(body.acceptSupportAccess!==true) return json({error:"Please acknowledge administrator support access."},400);
-      if(typeof body.inviteCode!=="string" || !/^[a-f0-9]{64}$/.test(body.inviteCode.trim())) return json({error:"Invitation is invalid, expired, used, or does not match this email."},400);
-      const invite=await env.DB.prepare("SELECT id FROM invitations WHERE digest=? AND email=? AND expires_at>? AND revoked_at IS NULL AND redeemed_at IS NULL")
-        .bind(await digest(`invite:${body.inviteCode.trim()}`,env.AUTH_SECRET),email,now).first<{id:string}>();
       if(!invite || account || email===OWNER) return json({error:"Invitation is invalid, expired, used, or does not match this email. Existing users can sign in instead."},400);
       invitationId=invite.id;
     } else if(account?.disabled || (!account && email!==OWNER)) return json({challenge:id,message:"If this address has access, a code will arrive shortly."});

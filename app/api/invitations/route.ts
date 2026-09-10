@@ -56,7 +56,7 @@ export async function POST(request:Request) {
         const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${runtime.RESEND_API_KEY}`,"Content-Type":"application/json","Idempotency-Key":`invitation-${id}`},body:JSON.stringify({
           from:"Skeet Tracker <login@sk33t.net>",to:[email],reply_to:OWNER_EMAIL,
           subject:"Skeet Tracker TEST — you’re invited",
-          text:`James has invited you to the Skeet Tracker test site.\n\nCreate your account here:\n${url}\n\nUse ${email}, enter your display name, and verify your email with the six-digit code we send you. This invitation works once and expires ${new Date(expiresAt).toUTCString()}.\n\nThis is the separate test tracker. Access to the private test site must also be enabled by James. Your live records are unchanged.\n\nJames can assist with uploading records and correcting issues. If you need help or were not expecting this invitation, reply to this email.`,
+          text:`James has invited you to the Skeet Tracker test site.\n\nCreate your account here:\n${url}\n\nYour account email is ${email}; the link fills it in automatically. Enter your display name and verify your email with the six-digit code we send you. This invitation works once and expires ${new Date(expiresAt).toUTCString()}.\n\nThis is the separate test tracker. Access to the private test site must also be enabled by James. Your live records are unchanged.\n\nJames can assist with uploading records and correcting issues. If you need help or were not expecting this invitation, reply to this email.`,
         }),signal:AbortSignal.timeout(15000)});
         emailStatus=response.ok?"sent":response.status>=500?"unknown":"failed";
       } catch {emailStatus="unknown";}
@@ -70,3 +70,4 @@ export async function POST(request:Request) {
     return json({id,email,code,expiresAt,url,emailStatus},201);
   } catch {return json({error:"Unable to update invitations. Please retry."},503);}
 }
+

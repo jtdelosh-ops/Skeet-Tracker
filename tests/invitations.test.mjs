@@ -118,3 +118,14 @@ test('missing email configuration preserves existing invitations and allows link
    const other=await invite('link-only@example.test');assert.equal(other.emailStatus,'not_sent');
  } finally {runtime.RESEND_API_KEY=key;}
 });
+test('invitation link resolves its email without sending mail and signup needs no email input',async()=>{
+ db.exec('DELETE FROM login_limits');const inv=await invite('automatic@example.test'),before=mail.length;
+ const lookup=await login.loginRoute(req('/api/auth/invitation',{inviteCode:inv.code}),runtime);
+ assert.equal(lookup.status,200);assert.equal(lookup.headers.get('cache-control'),'no-store');assert.deepEqual(await lookup.json(),{email:inv.email});assert.equal(mail.length,before);
+ assert.equal((await login.loginRoute(req('/api/auth/invitation',{inviteCode:inv.code},'','https://evil.example'),runtime)).status,403);
+ const response=await login.loginRoute(req('/api/auth/request',{inviteCode:inv.code,displayName:'Automatic',acceptSupportAccess:true}),runtime);assert.equal(response.status,200);assert.deepEqual(mail.at(-1).to,[inv.email]);
+ const result=await verify({challenge:(await response.json()).challenge,code:mail.at(-1).text.match(/code is (\d{6})/)[1]});assert.equal(result.status,200);
+ assert.equal(db.prepare('SELECT email FROM users WHERE display_name=?').get('Automatic').email,inv.email);
+ assert.equal((await login.loginRoute(req('/api/auth/invitation',{inviteCode:inv.code}),runtime)).status,400);
+ for(const kind of ['revoked','expired']){const invalid=await invite(kind+'-lookup@example.test');db.prepare(`UPDATE invitations SET ${kind==='revoked'?'revoked_at':'expires_at'}=0 WHERE id=?`).run(invalid.id);const r=await login.loginRoute(req('/api/auth/invitation',{inviteCode:invalid.code}),runtime);assert.equal(r.status,400);assert.equal(JSON.stringify(await r.json()).includes(invalid.email),false);}
+});
