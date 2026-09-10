@@ -67,3 +67,14 @@ test('image extraction fails closed without configuration and uses bounded struc
    db.exec("UPDATE login_limits SET count=10 WHERE key='image-user:a'");assert.equal((await extract.POST(imageReq())).status,429);
  }finally{globalThis.fetch=original;delete runtime.OPENAI_API_KEY;}
 });
+
+test('combined image previews detect overlapping shoots and enforce the batch limit',async()=>{
+ const first={...draft[0],shootNumber:'888001',name:'Multi-image first shoot',sourceId:'image-2024',selected:true};
+ const overlap={...first,sourceId:'image-overlap'};
+ const nextYear={...draft[1],shootNumber:'888002',name:'Multi-image next year',sourceId:'image-2025',selected:true};
+ const response=await routes.POST(req({action:'inspect',rows:[first,overlap,nextYear]}));
+ assert.equal(response.status,200);const {checks}=await response.json();
+ assert.equal(checks[0].duplicate,null);assert.ok(checks[1].duplicate);assert.equal(checks[2].duplicate,null);
+ const oversized=await routes.POST(req({action:'inspect',rows:Array.from({length:101},(_,i)=>({...first,shootNumber:String(880000+i)}))}));
+ assert.equal(oversized.status,400);
+});

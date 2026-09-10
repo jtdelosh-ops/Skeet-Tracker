@@ -15,3 +15,10 @@ Recent batches support undo. Before deleting any remaining batch records, snapsh
 Migration 0011 adds import batches/snapshots and nullable import references/indexes on shoots. It is schema-only; live records and the live deployment remain untouched.
 
 Validation: the 44-test suite covers parsing the six-shoot NSSA example (28 events, totals 568/582/580/557/360), validation, preview/confirmation, duplicate checks including a race, idempotency, ownership, audit rollback, undo protection, and mocked image extraction/configuration/rate limits. Real image extraction remains to be verified after the API secret is supplied.
+
+
+## Multiple screenshot imports
+
+Users can select up to five images or one CSV, with a step-by-step NSSA guide. Images process sequentially and each consumes one existing extraction attempt. Successful rows and edits survive a failed file; retry targets only that file, or remove it to continue. Each row links to its source image. Starting classes and total comparisons stay per source. Duplicate checks cover the combined preview and saved records. More than 100 preview rows blocks confirmation until a file is removed. Images stay browser-local except during extraction and are never saved by the tracker.
+
+The configured test-site API successfully extracted the original six-shoot, 28-score NSSA screenshot on September 10, 2026.
