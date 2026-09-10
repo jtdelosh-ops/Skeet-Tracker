@@ -15,6 +15,8 @@ export const invitations = sqliteTable("invitations", {
   createdBy: text("created_by").notNull().references(() => users.id),
   createdAt: integer("created_at").notNull(), expiresAt: integer("expires_at").notNull(),
   revokedAt: integer("revoked_at"), redeemedAt: integer("redeemed_at"),
+  emailStatus: text("email_status").notNull().default("not_sent"),
+  sentAt: integer("sent_at"),
   redeemedBy: text("redeemed_by").references(() => users.id),
 }, table => [index("idx_invitations_email_created").on(table.email,table.createdAt)]);
 export const userClassSettings = sqliteTable("user_class_settings", {

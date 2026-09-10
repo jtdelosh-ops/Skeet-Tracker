@@ -86,3 +86,35 @@ test('email send throttles are per account with a shared daily cap',async()=>{
  db.exec("UPDATE login_limits SET count=80 WHERE key='send-day'");
  const c=await invite('limit-c@example.test');assert.equal((await login.loginRoute(req('/api/auth/request',signupBody(c.email,c)),runtime)).status,429);
 });
+test('send invitation emails the bound recipient and saves acceptance; duplicate clicks are throttled',async()=>{
+ db.exec('DELETE FROM login_limits');
+ const previous=globalThis.fetch;let delivery;
+ globalThis.fetch=async(url,opts)=>{assert.equal(url,'https://api.resend.com/emails');delivery={headers:opts.headers,body:JSON.parse(opts.body)};return new Response('{"id":"synthetic"}');};
+ try {
+   const email='send@example.test',r=await routes.POST(req('/api/invitations',{action:'send',email},ownerCookie));assert.equal(r.status,201);
+   const result=await r.json();assert.equal(result.emailStatus,'sent');assert.deepEqual(delivery.body.to,[email]);assert.equal(delivery.body.reply_to,'jtdelosh@gmail.com');assert.match(delivery.body.subject,/TEST/);assert.ok(delivery.body.text.includes(result.url));assert.equal(delivery.headers['Idempotency-Key'],'invitation-'+result.id);
+   const row=db.prepare('SELECT email_status,sent_at FROM invitations WHERE id=?').get(result.id);assert.equal(row.email_status,'sent');assert.ok(row.sent_at>0);
+   const again=await routes.POST(req('/api/invitations',{action:'send',email},ownerCookie));assert.equal(again.status,429);assert.equal(db.prepare('SELECT revoked_at FROM invitations WHERE id=?').get(result.id).revoked_at,null);
+   assert.equal((await routes.POST(req('/api/invitations',{action:'send',email:'anonymous@example.test'}))).status,401);
+   db.exec("UPDATE login_limits SET count=80 WHERE key='send-day'");assert.equal((await routes.POST(req('/api/invitations',{action:'send',email:'daily@example.test'},ownerCookie))).status,429);
+ } finally {globalThis.fetch=previous;}
+});
+test('rejected or uncertain email sends preserve a usable invitation and never claim success',async()=>{
+ db.exec('DELETE FROM login_limits');const previous=globalThis.fetch;
+ try {
+   for(const [suffix,status,expected] of [['rejected',422,'failed'],['server',503,'unknown'],['timeout',0,'unknown']]) {
+     globalThis.fetch=async()=>{if(!status)throw Error('synthetic timeout');return new Response('{}',{status});};
+     const email=suffix+'-send@example.test',r=await routes.POST(req('/api/invitations',{action:'send',email},ownerCookie));assert.equal(r.status,201);
+     const result=await r.json();assert.equal(result.emailStatus,expected);assert.ok(result.url.includes(result.code));
+     const row=db.prepare('SELECT * FROM invitations WHERE id=?').get(result.id);assert.equal(row.email_status,expected);assert.equal(row.sent_at,null);assert.equal(row.revoked_at,null);assert.equal(row.redeemed_at,null);
+     globalThis.fetch=previous;const c=await challenge(email,result);assert.equal((await verify(c)).status,200);
+   }
+ } finally {globalThis.fetch=previous;}
+});
+test('missing email configuration preserves existing invitations and allows link-only creation',async()=>{
+ const inv=await invite('configuration@example.test');const key=runtime.RESEND_API_KEY;delete runtime.RESEND_API_KEY;
+ try {
+   const r=await routes.POST(req('/api/invitations',{action:'send',email:inv.email},ownerCookie));assert.equal(r.status,503);assert.equal(db.prepare('SELECT revoked_at FROM invitations WHERE id=?').get(inv.id).revoked_at,null);
+   const other=await invite('link-only@example.test');assert.equal(other.emailStatus,'not_sent');
+ } finally {runtime.RESEND_API_KEY=key;}
+});

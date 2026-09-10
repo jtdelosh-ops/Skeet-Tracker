@@ -26,7 +26,7 @@ export async function currentSession(request: Request, env: LoginEnv) {
   return env.DB.prepare("SELECT u.id,u.email,u.role,u.display_name AS displayName,s.expires_at FROM users u JOIN login_sessions s ON s.email=u.email WHERE s.digest=? AND s.expires_at>? AND u.disabled=0")
     .bind(sessionDigest,Date.now()).first<Account>();
 }
-async function limit(env: LoginEnv, key: string, max: number, interval: number) {
+export async function limit(env: LoginEnv, key: string, max: number, interval: number) {
   const now=Date.now();
   const row=await env.DB.prepare("INSERT INTO login_limits (key,count,expires_at) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN expires_at <= ? THEN 1 ELSE count+1 END, expires_at=CASE WHEN expires_at <= ? THEN excluded.expires_at ELSE expires_at END RETURNING count").bind(key,now+interval,now,now).first<{count:number}>();
   return !!row && row.count<=max;
