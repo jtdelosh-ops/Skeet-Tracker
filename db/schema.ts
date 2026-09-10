@@ -24,6 +24,13 @@ export const userClassSettings = sqliteTable("user_class_settings", {
   event: text("event", { enum: ["12", "20", "28", "410", "doubles"] }).notNull(),
   startingClass: text("starting_class").notNull(),
 }, (table) => [primaryKey({columns:[table.userId,table.event]})]);
+export const adminAudit = sqliteTable("admin_audit", {
+  id: text("id").primaryKey(), actorId: text("actor_id").notNull().references(()=>users.id),
+  targetId: text("target_id").notNull().references(()=>users.id),
+  action: text("action").notNull(), entityId: text("entity_id"),
+  beforeJson: text("before_json"), afterJson: text("after_json"),
+  createdAt: integer("created_at").notNull(),
+},table=>[index("idx_admin_audit_created_id").on(table.createdAt,table.id),index("idx_admin_audit_target_created").on(table.targetId,table.createdAt)]);
 export const accountMigrations = sqliteTable("account_migrations", {
   key: text("key").primaryKey(), userId: text("user_id").notNull().references(() => users.id),
   completedAt: integer("completed_at").notNull(),

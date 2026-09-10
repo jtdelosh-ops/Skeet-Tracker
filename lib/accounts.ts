@@ -1,6 +1,7 @@
 export const OWNER_EMAIL = "jtdelosh@gmail.com";
 export const OWNER_ID = "james-delosh";
-export interface Account { id: string; email: string; role: "admin" | "shooter"; displayName: string; expires_at: number; }
+export interface Account { id: string; email: string; role: "admin" | "shooter"; displayName: string; expires_at: number; actorId?:string; actorName?:string; actorEmail?:string; }
+export const isOwner=(account:Pick<Account,"id"|"email"|"role">)=>account.id===OWNER_ID && account.email===OWNER_EMAIL && account.role==="admin";
 
 // Only called after proving a pre-existing owner session or redeeming an owner email code.
 // A disabled account is never re-enabled by bootstrap; unknown users are never created here.

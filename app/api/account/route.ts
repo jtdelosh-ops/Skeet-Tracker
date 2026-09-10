@@ -3,7 +3,7 @@ import { requestAccount } from "@/lib/request-account";
 import { migrateLegacyRecords, OWNER_ID, OWNER_EMAIL } from "@/lib/accounts";
 
 export async function GET(request: Request) {
-  const account=await requestAccount(request); if(account instanceof Response) return account;
+  const account=await requestAccount(request,true); if(account instanceof Response) return account;
   try {
     let legacy = null;
     if(account.id===OWNER_ID && account.email===OWNER_EMAIL && account.role==="admin") {
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
         legacy={shoots:shoots?.count??0,settings:settings?.count??0};
       }
     }
-    return Response.json({email:account.email,displayName:account.displayName,role:account.role,legacy},{headers:{"Cache-Control":"no-store"}});
+    return Response.json({email:account.actorEmail??account.email,displayName:account.actorName??account.displayName,role:account.actorId?"admin":account.role,legacy,support:account.actorId?{displayName:account.displayName,email:account.email}:null},{headers:{"Cache-Control":"no-store"}});
   } catch {return Response.json({error:"Unable to load account."},{status:503});}
 }
 

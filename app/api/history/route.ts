@@ -5,7 +5,7 @@ import type { shoots } from "@/db/schema";
 import { requestAccount } from "@/lib/request-account";
 
 export async function GET(request: Request) {
-  const account=await requestAccount(request); if(account instanceof Response) return account;
+  const account=await requestAccount(request,true); if(account instanceof Response) return account;
   let parsed;
   try { parsed = parseHistoryQuery(new URL(request.url).searchParams); }
   catch (error) { return Response.json({ error: (error as Error).message }, { status: 400 }); }
@@ -23,3 +23,4 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unable to load tournament history. Please retry." }, { status: 500 });
   }
 }
+

@@ -2,6 +2,8 @@ import { getDb } from "../../../db";
 import { userClassSettings as classSettings } from "../../../db/schema";
 import { eq } from "drizzle-orm";
 import { requestAccount } from "@/lib/request-account";
+import { env } from "cloudflare:workers";
+import { auditMutation } from "@/lib/admin-audit";
 
 const events = ["12", "20", "28", "410", "doubles"] as const;
 type EventKey = (typeof events)[number];
@@ -16,7 +18,7 @@ const validClasses: Record<EventKey, readonly string[]> = {
 };
 
 export async function GET(request: Request) {
-  const account=await requestAccount(request); if(account instanceof Response) return account;
+  const account=await requestAccount(request,true); if(account instanceof Response) return account;
   try {
     const rows = await getDb().select().from(classSettings).where(eq(classSettings.userId,account.id));
     return Response.json({
@@ -33,7 +35,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const account=await requestAccount(request); if(account instanceof Response) return account;
+  const account=await requestAccount(request,true); if(account instanceof Response) return account;
   try {
     const body = (await request.json()) as { startingClasses?: StartingClasses };
     const submitted = body.startingClasses ?? {};
@@ -46,9 +48,9 @@ export async function PUT(request: Request) {
       return [{ userId:account.id, event, startingClass }];
     });
 
-    const db = getDb();
-    if(rows.length) await db.batch([db.delete(classSettings).where(eq(classSettings.userId,account.id)),db.insert(classSettings).values(rows)]);
-    else await db.delete(classSettings).where(eq(classSettings.userId,account.id));
+    const db=env.DB;
+    const audit=auditMutation(db,account,"settings.update",null,"settings");
+    await db.batch([...audit.before,db.prepare("DELETE FROM user_class_settings WHERE user_id=?").bind(account.id),...rows.map(row=>db.prepare("INSERT INTO user_class_settings(user_id,event,starting_class) VALUES (?,?,?)").bind(account.id,row.event,row.startingClass)),...audit.after]);
 
     return Response.json({ startingClasses: submitted });
   } catch (error) {
@@ -59,3 +61,4 @@ export async function PUT(request: Request) {
     );
   }
 }
+

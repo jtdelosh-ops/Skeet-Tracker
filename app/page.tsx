@@ -1,4 +1,5 @@
 "use client";
+import { trackerFetch } from "@/lib/tracker-fetch";
 import { useCallback, useEffect, useState } from "react";
 import {
   ArrowDown,
@@ -59,7 +60,7 @@ export default function Home() {
   const [stats, setStats] = useState<Record<EventKey, EventStats>>(() => calculateStats([], {}));
   const history = useHistory();
   const requestTrackerData = async () => {
-    const response = await fetch("/api/dashboard");
+    const response = await trackerFetch("/api/dashboard");
     const data = await response.json() as { error?: string; stats: Record<EventKey, EventStats>; startingClasses: StartingClasses; inProgressShoots: Shoot[] };
     if (!response.ok) throw Error(data.error);
     return data as { stats: Record<EventKey, EventStats>; startingClasses: StartingClasses; inProgressShoots: Shoot[] };
@@ -165,7 +166,7 @@ export default function Home() {
   };
   const deleteShoot = async (shoot: Shoot) => {
     if (!window.confirm(`Delete ${shoot.name}? This cannot be undone.`)) return;
-    const r = await fetch(`/api/shoots?id=${shoot.id}`, { method: "DELETE" });
+    const r = await trackerFetch(`/api/shoots?id=${shoot.id}`, { method: "DELETE" });
     const d = await r.json() as {error: string};
     if (!r.ok) return setError(d.error);
     await load();
@@ -190,7 +191,7 @@ export default function Home() {
           requestedStatus === "complete" || requestedStatus === "in_progress"
             ? requestedStatus
             : formStatus;
-      const r = await fetch("/api/shoots", {
+      const r = await trackerFetch("/api/shoots", {
           method: editingId ? "PATCH" : "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -231,7 +232,7 @@ export default function Home() {
     setSavingSettings(true);
     setError("");
     try {
-      const response = await fetch("/api/settings", {
+      const response = await trackerFetch("/api/settings", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ startingClasses: draftStartingClasses }),
@@ -773,3 +774,4 @@ export default function Home() {
     </main>
   );
 }
+

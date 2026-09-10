@@ -1,4 +1,5 @@
 "use client";
+import { trackerFetch } from "@/lib/tracker-fetch";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Shoot } from "@/lib/scoring";
 import { createRequestGate } from "@/lib/request-gate";
@@ -33,7 +34,7 @@ export function useHistory() {
     setError("");
     try {
       const params = new URLSearchParams({ q, page: String(page) });
-      const response = await fetch(`/api/history?${params}`, { signal: current.signal });
+      const response = await trackerFetch(`/api/history?${params}`, { signal: current.signal });
       const result = await response.json() as HistoryData & {error?:string};
       if (!response.ok) throw Error(result.error ?? "Unable to load history.");
       if (!current.isCurrent()) return;
@@ -70,3 +71,4 @@ export function useHistory() {
   const refresh = () => { const location = readLocation(); void request(location.query, location.page); };
   return { query, data, loading, error, search, navigate, refresh };
 }
+
