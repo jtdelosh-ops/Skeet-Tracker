@@ -49,25 +49,34 @@ export async function loginRoute(request: Request, env: LoginEnv): Promise<Respo
   if(!request.headers.get("content-type")?.includes("application/json")) return json({error:"JSON required."},415);
   const input=await request.text();
   if(input.length>2048) return json({error:"Request too large."},413);
-  let body: {email?:string; challenge?:string; code?:string; remember?:boolean};
+  let body: {email?:string; challenge?:string; code?:string; remember?:boolean; inviteCode?:string; displayName?:string; acceptSupportAccess?:boolean};
   try {body=JSON.parse(input);} catch {return json({error:"Invalid request."},400);}
   if(!body || typeof body!=="object") return json({error:"Invalid request."},400);
   if(path==="/api/auth/request") {
     const email=typeof body.email==="string"?body.email.trim().toLowerCase():"";
     if(email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({error:"Enter a valid email address."},400);
     const id=token(), now=Date.now();
-    // Initial milestone deliberately admits only the owner. No platform identity bypass.
-    if(email!==OWNER) return json({challenge:id,message:"If this address has access, a code will arrive shortly."});
-    const disabled=await env.DB.prepare("SELECT disabled FROM users WHERE email=?").bind(email).first<{disabled:number}>();
-    if(disabled?.disabled) return json({challenge:id,message:"If this address has access, a code will arrive shortly."});
+    let invitationId: string|null=null, displayName: string|null=null;
+    const account=await env.DB.prepare("SELECT disabled FROM users WHERE email=?").bind(email).first<{disabled:number}>();
+    if(body.inviteCode!==undefined) {
+      displayName=typeof body.displayName==="string"?body.displayName.trim():"";
+      if(!displayName || displayName.length>80 || /[\u0000-\u001f\u007f]/.test(displayName)) return json({error:"Enter a display name between 1 and 80 characters."},400);
+      if(body.acceptSupportAccess!==true) return json({error:"Please acknowledge administrator support access."},400);
+      if(typeof body.inviteCode!=="string" || !/^[a-f0-9]{64}$/.test(body.inviteCode.trim())) return json({error:"Invitation is invalid, expired, used, or does not match this email."},400);
+      const invite=await env.DB.prepare("SELECT id FROM invitations WHERE digest=? AND email=? AND expires_at>? AND revoked_at IS NULL AND redeemed_at IS NULL")
+        .bind(await digest(`invite:${body.inviteCode.trim()}`,env.AUTH_SECRET),email,now).first<{id:string}>();
+      if(!invite || account || email===OWNER) return json({error:"Invitation is invalid, expired, used, or does not match this email. Existing users can sign in instead."},400);
+      invitationId=invite.id;
+    } else if(account?.disabled || (!account && email!==OWNER)) return json({challenge:id,message:"If this address has access, a code will arrive shortly."});
     if(!env.RESEND_API_KEY) return json({error:"Email delivery is not configured."},503);
-    if(!await limit(env,"owner-minute",1,60000) || !await limit(env,"owner-hour",5,3600000) || !await limit(env,"send-day",80,86400000)) return json({error:"Please wait before requesting another code."},429);
+    const rateKey=await digest(`email:${email}`,env.AUTH_SECRET);
+    if(!await limit(env,`${rateKey}:minute`,1,60000) || !await limit(env,`${rateKey}:hour`,5,3600000) || !await limit(env,"send-day",80,86400000)) return json({error:"Please wait before requesting another code."},429);
     // Rejection sampling avoids modulo bias.
     let number: number; do {number=crypto.getRandomValues(new Uint32Array(1))[0];} while(number>=4294000000);
     const code=String(number%1000000).padStart(6,"0");
     await env.DB.batch([
       env.DB.prepare("UPDATE login_challenges SET consumed=1 WHERE email=?").bind(email),
-      env.DB.prepare("INSERT INTO login_challenges (id,email,digest,expires_at,attempts,consumed,created_at) VALUES (?,?,?,?,0,0,?)").bind(id,email,await digest(`code:${id}:${code}`,env.AUTH_SECRET),now+600000,now),
+      env.DB.prepare("INSERT INTO login_challenges (id,email,digest,expires_at,attempts,consumed,created_at,invitation_id,display_name) VALUES (?,?,?,?,0,0,?,?,?)").bind(id,email,await digest(`code:${id}:${code}`,env.AUTH_SECRET),now+600000,now,invitationId,displayName),
       env.DB.prepare("DELETE FROM login_challenges WHERE expires_at < ?").bind(now-86400000),
       env.DB.prepare("DELETE FROM login_sessions WHERE expires_at < ?").bind(now),
     ]);
@@ -83,13 +92,28 @@ export async function loginRoute(request: Request, env: LoginEnv): Promise<Respo
   if(typeof body.challenge!=="string" || !/^[a-f0-9]{64}$/.test(body.challenge) || typeof body.code!=="string" || !/^\d{6}$/.test(body.code)) return json({error:"Enter the six-digit code."},400);
   const now=Date.now(), expected=await digest(`code:${body.challenge}:${body.code}`,env.AUTH_SECRET);
   // One atomic statement counts attempts and consumes a valid challenge under concurrent requests.
-  const found=await env.DB.prepare("UPDATE login_challenges SET attempts=attempts+1, consumed=CASE WHEN digest=? THEN 1 ELSE 0 END WHERE id=? AND email=? AND expires_at>? AND consumed=0 AND attempts<5 RETURNING email,consumed").bind(expected,body.challenge,OWNER,now).first<{email:string;consumed:number}>();
+  const found=await env.DB.prepare("UPDATE login_challenges SET attempts=attempts+1, consumed=CASE WHEN digest=? THEN 1 ELSE 0 END WHERE id=? AND expires_at>? AND consumed=0 AND attempts<5 RETURNING email,consumed,invitation_id,display_name").bind(expected,body.challenge,now).first<{email:string;consumed:number;invitation_id:string|null;display_name:string|null}>();
   if(!found?.consumed) return json({error:"Code is invalid, expired, or already used. Request a new code if needed."},400);
-  await ensureOwnerAccount(env.DB);
+  const raw=token(), age=body.remember===true?2592000:43200;
+  const sessionDigest=await digest(`session:${raw}`,env.AUTH_SECRET);
+  if(found.invitation_id) {
+    const userId=crypto.randomUUID();
+    // D1 batches are atomic. Recheck the invitation at redemption, then tie both
+    // consumption and session issuance to the unique account inserted here.
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO users (id,email,display_name,role,disabled,created_at,support_access_acknowledged_at) SELECT ?,email,?,'shooter',0,?,? FROM invitations WHERE id=? AND email=? AND expires_at>? AND revoked_at IS NULL AND redeemed_at IS NULL AND NOT EXISTS (SELECT 1 FROM users WHERE email=?)")
+        .bind(userId,found.display_name,now,now,found.invitation_id,found.email,now,found.email),
+      env.DB.prepare("UPDATE invitations SET redeemed_at=?,redeemed_by=? WHERE id=? AND EXISTS (SELECT 1 FROM users WHERE id=?)").bind(now,userId,found.invitation_id,userId),
+      env.DB.prepare("INSERT INTO login_sessions (digest,email,expires_at,created_at) SELECT ?,email,?,? FROM users WHERE id=? AND disabled=0").bind(sessionDigest,now+age*1000,now,userId),
+    ]);
+    const created=await env.DB.prepare("SELECT id FROM users WHERE id=?").bind(userId).first();
+    if(!created) return json({error:"Invitation is no longer available. Ask James for a new invitation."},400);
+    return json({ok:true},200,{"Set-Cookie":cookie(raw,age)});
+  }
+  if(found.email===OWNER) await ensureOwnerAccount(env.DB);
   const user=await env.DB.prepare("SELECT id FROM users WHERE email=? AND disabled=0").bind(found.email).first();
   if(!user) return json({error:"Account is unavailable."},403);
-  const raw=token(), age=body.remember===true?2592000:43200;
-  await env.DB.prepare("INSERT INTO login_sessions (digest,email,expires_at,created_at) VALUES (?,?,?,?)").bind(await digest(`session:${raw}`,env.AUTH_SECRET),found.email,now+age*1000,now).run();
+  await env.DB.prepare("INSERT INTO login_sessions (digest,email,expires_at,created_at) VALUES (?,?,?,?)").bind(sessionDigest,found.email,now+age*1000,now).run();
   return json({ok:true},200,{"Set-Cookie":cookie(raw,age)});
 }
 

@@ -7,7 +7,16 @@ export const users = sqliteTable("users", {
   role: text("role", { enum: ["admin", "shooter"] }).notNull().default("shooter"),
   disabled: integer("disabled").notNull().default(0),
   createdAt: integer("created_at").notNull(),
+  supportAccessAcknowledgedAt: integer("support_access_acknowledged_at"),
 });
+export const invitations = sqliteTable("invitations", {
+  id: text("id").primaryKey(), email: text("email").notNull(),
+  digest: text("digest").notNull().unique(),
+  createdBy: text("created_by").notNull().references(() => users.id),
+  createdAt: integer("created_at").notNull(), expiresAt: integer("expires_at").notNull(),
+  revokedAt: integer("revoked_at"), redeemedAt: integer("redeemed_at"),
+  redeemedBy: text("redeemed_by").references(() => users.id),
+}, table => [index("idx_invitations_email_created").on(table.email,table.createdAt)]);
 export const userClassSettings = sqliteTable("user_class_settings", {
   userId: text("user_id").notNull().references(() => users.id),
   event: text("event", { enum: ["12", "20", "28", "410", "doubles"] }).notNull(),
@@ -20,6 +29,8 @@ export const accountMigrations = sqliteTable("account_migrations", {
 
 export const loginChallenges = sqliteTable("login_challenges", {
   id: text("id").primaryKey(), email: text("email").notNull(), digest: text("digest").notNull(),
+  invitationId: text("invitation_id").references(() => invitations.id),
+  displayName: text("display_name"),
   expiresAt: integer("expires_at").notNull(), attempts: integer("attempts").notNull().default(0),
   consumed: integer("consumed").notNull().default(0), createdAt: integer("created_at").notNull(),
 });
