@@ -78,3 +78,15 @@ test('combined image previews detect overlapping shoots and enforce the batch li
  const oversized=await routes.POST(req({action:'inspect',rows:Array.from({length:101},(_,i)=>({...first,shootNumber:String(880000+i)}))}));
  assert.equal(oversized.status,400);
 });
+
+test('doubles-only imports omit 0/0 but preserve real zero scores and N',async()=>{
+ const input={...draft[0],shootNumber:'170802',name:'MONTHLY TARGETS',date:'2026-05-16',scores:{'12':'','20':'','28':'0/0','410':'0 / 0 N',doubles:'37/50 N'}};
+ const normalized=format.normalizeImportDraft(input);assert.equal(normalized.scores['28'],'');assert.equal(normalized.scores['410'],'');
+ const parsed=format.validateImportRow(input);assert.deepEqual(parsed.entries,[{event:'doubles',broken:37,targets:50,classShot:'N',label:'Main'}]);
+ const csv=format.csvDraft('Shoot,Date,Shoot Name,Event Type,12,20,28,410,Doubles\n170802,05/16/2026,MONTHLY TARGETS,Main,,,0/0,0/0,37/50 N');assert.equal(csv[0].scores['28'],'');
+ const response=await commit([input]);assert.equal(response.status,200);const {id}=await response.json();
+ const saved=db.prepare('SELECT event,broken,targets,class_shot FROM event_scores WHERE shoot_id IN (SELECT id FROM shoots WHERE import_batch_id=?)').all(id);assert.equal(saved.length,1);assert.equal(saved[0].event,'doubles');assert.equal(saved[0].class_shot,'N');
+ assert.equal(format.validateImportRow({...input,scores:{...input.scores,doubles:'0/50'}}).entries[0].targets,50);
+ assert.throws(()=>format.validateImportRow({...input,scores:{...input.scores,doubles:'1/0'}}),/check broken/);
+ assert.throws(()=>format.validateImportRow({...input,scores:{...input.scores,doubles:'0/0'}}),/at least one/);
+});

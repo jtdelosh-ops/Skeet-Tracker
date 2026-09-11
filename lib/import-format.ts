@@ -4,6 +4,12 @@ export type DraftRow={shootNumber:string;date:string;name:string;label:string;sc
 export type ImportEntry={event:ImportEvent;broken:number;targets:number;classShot:string|null;label:string};
 export type ImportRow={shootNumber:number|null;date:string;name:string;label:string;entries:ImportEntry[];key:string};
 export const emptyScores=()=>({'12':'','20':'','28':'','410':'',doubles:''});
+export function normalizeImportScore(value:string):string {
+ return /^0\s*\/\s*0(?:\s+(?:AAA|AA|A|B|C|D|E|N))?$/i.test(value.trim())?'':value.trim();
+}
+export function normalizeImportDraft(row:DraftRow):DraftRow {
+ return {...row,scores:Object.fromEntries(importEvents.map(event=>[event,normalizeImportScore(row.scores[event])])) as Record<ImportEvent,string>};
+}
 export function parseCsv(text:string):string[][] {
   if(text.length>500000)throw Error("CSV files must be 500 KB or smaller.");
   text=text.replace(/^\uFEFF/,"");const rows:string[][]=[];let row:string[]=[],cell="",quoted=false,closed=false;
@@ -32,7 +38,7 @@ export function csvDraft(text:string):DraftRow[]{
     for(const e of importEvents){const combined=column(eventAliases(e)),broken=column([e+'broken']),targets=column([e+'targets']),cls=column([e+'class']);
       if(combined>=0)scores[e]=r[combined].trim();else if(broken>=0||targets>=0){const b=broken>=0?r[broken].trim():'',t=targets>=0?r[targets].trim():'';scores[e]=b||t?`${b}/${t}${cls>=0&&r[cls].trim()?' '+r[cls].trim():''}`:'';}
     }
-    return {shootNumber:number>=0?r[number].trim():'',date:r[date].trim(),name:r[name].trim(),label:type>=0?r[type].trim():'',scores,warnings:[]};
+    return normalizeImportDraft({shootNumber:number>=0?r[number].trim():'',date:r[date].trim(),name:r[name].trim(),label:type>=0?r[type].trim():'',scores,warnings:[]});
   });
 }
 export function normalizeDate(value:string){
@@ -47,8 +53,8 @@ export function validateImportRow(value:unknown):ImportRow {
   const shootNumber=row.shootNumber.trim()?Number(row.shootNumber):null;if(shootNumber===0)throw Error("Shoot number must be positive.");
   const label=row.label?.toLowerCase()==='main'?'Main':row.label?.toLowerCase()==='preliminary'?'Preliminary':null;if(!label)throw Error("Choose Main or Preliminary; the source may not specify this.");
   const entries:ImportEntry[]=[];
-  for(const event of importEvents){const cell=row.scores?.[event];if(typeof cell!=='string')throw Error(`Invalid ${event} score.`);if(!cell.trim())continue;
-    const m=/^(\d+)\s*\/\s*(\d+)(?:\s+(AAA|AA|A|B|C|D|E))?$/i.exec(cell.trim());if(!m)throw Error(`${event}: use broken/targets and optional class, for example 94/100 A.`);
+  for(const event of importEvents){const cell=row.scores?.[event];if(typeof cell!=='string')throw Error(`Invalid ${event} score.`);const score=normalizeImportScore(cell);if(!score)continue;
+    const m=/^(\d+)\s*\/\s*(\d+)(?:\s+(AAA|AA|A|B|C|D|E|N))?$/i.exec(score);if(!m)throw Error(`${event}: use broken/targets and optional class, for example 94/100 A.`);
     const broken=Number(m[1]),targets=Number(m[2]),classShot=m[3]?.toUpperCase()??null;if(targets<=0||targets>10000||broken>targets)throw Error(`${event}: check broken targets and total targets.`);if(classShot==='E'&&event!=='12')throw Error(`${event}: class E is only valid for 12 gauge.`);
     entries.push({event,broken,targets,classShot,label});
   }
