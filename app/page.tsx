@@ -48,6 +48,7 @@ export default function Home() {
     [editingId, setEditingId] = useState<number | null>(null),
     [formStatus, setFormStatus] = useState<ShootStatus>("in_progress"),
     [error, setError] = useState("");
+  const [dateError, setDateError] = useState("");
   const [rankUps, setRankUps] = useState<ClassChange[]>([]),
     [rankDowns, setRankDowns] = useState<ClassChange[]>([]);
   const [startingClasses, setStartingClasses] = useState<StartingClasses>({}),
@@ -111,6 +112,7 @@ export default function Home() {
     setName("");
     setNotes("");
     setDate("");
+    setDateError("");
     setEntries(defaults());
   };
   const currentClassFor = (event: EventKey) =>
@@ -161,6 +163,7 @@ export default function Home() {
     setEntries(
       [...savedEntries, ...missingEntries],
     );
+    setDateError("");
     setShow(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -176,7 +179,12 @@ export default function Home() {
     e.preventDefault();
     setSaving(true);
     setError("");
+    setDateError("");
     try {
+      if (!date) {
+        setDateError("Enter a shoot start date before recording this shoot.");
+        return;
+      }
       const payload = entries
         .filter((x) => x.broken !== "")
         .map((x) => ({
@@ -216,9 +224,15 @@ export default function Home() {
       setDraftStartingClasses(nextData.startingClasses);
       setRankUps(changes.filter((change) => change.direction === "up"));
       setRankDowns(changes.filter((change) => change.direction === "down"));
-    } catch (e) {
+          } catch (e) {
+      setSaving(false);
+      if (e instanceof Error && e.message === "Missing date") {
+        return;
+      }
       setError(e instanceof Error ? e.message : "Unable to save");
-    } finally {
+      return;
+    }
+    finally {
       setSaving(false);
     }
   }
@@ -387,14 +401,14 @@ export default function Home() {
               />
             </label>
             <label>
-              Date completed
+              Shoot start date
               <Input
-                required
                 type="date"
                 value={date}
                 onChange={(e) => {
                   const nextDate = e.target.value;
                   setDate(nextDate);
+                  setDateError("");
                   if (!editingId)
                     setEntries((current) =>
                       current.map((entry) => ({
@@ -404,6 +418,8 @@ export default function Home() {
                     );
                 }}
               />
+              <small>For a multi-day shoot, use the first day you shot.</small>
+              {dateError ? <small className="field-error">{dateError}</small> : null}
             </label>
           </div>
           <label className="shoot-notes-field">
