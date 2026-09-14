@@ -17,7 +17,6 @@ export default function Invitations() {
   return <main style={{maxWidth:760,margin:"32px auto",padding:24}}>
     <a href="/" style={{textDecoration:"underline"}}>Back to tracker</a>
     <h1 style={{fontSize:28,fontWeight:700,margin:"20px 0 12px"}}>Invitations</h1>
-    <p style={{marginBottom:16,padding:12,border:"1px solid #777",borderRadius:8}}>This test site is currently private to James. Other shooters will need access to the test site before they can open an invitation.</p>
     <p style={{marginBottom:20}}>Enter a shooter’s email and send their invitation directly. It expires after seven days and works once. Sending or creating another invitation for the same email replaces the previous one.</p>
     {ready&&<form onSubmit={e=>{e.preventDefault();const submitter=(e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement|null;void update(submitter?.value==="create"?"create":"send");}}>
       <label htmlFor="invite-email">Shooter’s email address</label><input id="invite-email" type="email" required maxLength={254} value={email} disabled={busy} onChange={e=>setEmail(e.target.value)} style={field}/>

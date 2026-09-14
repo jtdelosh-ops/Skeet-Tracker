@@ -92,7 +92,7 @@ export async function loginRoute(request: Request, env: LoginEnv): Promise<Respo
       env.DB.prepare("DELETE FROM login_sessions WHERE expires_at < ?").bind(now),
     ]);
     try {
-      const sent=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,"Content-Type":"application/json","Idempotency-Key":id},body:JSON.stringify({from:"Skeet Tracker <login@sk33t.net>",to:[email],reply_to:OWNER,subject:"Skeet Tracker TEST — your sign-in code",text:`Your test-site sign-in code is ${code}. It expires in 10 minutes and can be used once.\n\nEnter it at ${env.APP_ORIGIN}/login.\n\nThis is the separate test tracker. Your live records are unchanged. If you did not request this code, ignore this email.`}),signal:AbortSignal.timeout(15000)});
+      const sent=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,"Content-Type":"application/json","Idempotency-Key":id},body:JSON.stringify({from:"Skeet Tracker <login@sk33t.net>",to:[email],reply_to:OWNER,subject:env.APP_ORIGIN==="https://sk33t.net"?"Skeet Tracker — your sign-in code":"Skeet Tracker TEST — your sign-in code",text:`Your sign-in code is ${code}. It expires in 10 minutes and can be used once.\n\nEnter it at ${env.APP_ORIGIN}/login.\n\n${env.APP_ORIGIN==="https://sk33t.net"?"":"This is the separate test tracker. "}If you did not request this code, ignore this email.`}),signal:AbortSignal.timeout(15000)});
       if(!sent.ok) throw new Error("Delivery failed");
     } catch {
       await env.DB.prepare("UPDATE login_challenges SET consumed=1 WHERE id=?").bind(id).run();
