@@ -2,9 +2,8 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import { authGate, type LoginEnv } from "../lib/login";
-import { rolloutGate, type RolloutEnv } from "../lib/rollout";
 
-interface Env extends LoginEnv, RolloutEnv {
+interface Env extends LoginEnv {
   ASSETS: Fetcher;
   DB: D1Database;
   IMAGES: {
@@ -31,8 +30,6 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     try {
-      const maintenance = await rolloutGate(request, env);
-      if (maintenance) return maintenance;
       const denied = await authGate(request, env);
       if (denied) return denied;
     } catch {

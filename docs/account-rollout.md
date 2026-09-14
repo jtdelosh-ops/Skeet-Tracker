@@ -18,4 +18,8 @@ James approved consolidation into sk33t.net on September 14, 2026. The rehearsed
 
 Before any data transfer, both original datasets and their final snapshots remain available. A failed transfer batch leaves production unchanged. A source-fingerprint mismatch or changed target requires a new export and review, not a blind retry. Keep the site locked if verification fails after transfer; do not publish the old unprotected app to a public Site.
 
-The repository includes `scripts/rehearse-rollout.mjs` and migration tests. Backup files and verification reports are private local artifacts and must never be committed. The rollout endpoint is disabled unless a maintenance mode, a 256-bit secret, and an unexpired deadline are configured; it accepts no arbitrary SQL or table names. Disable it and remove its secret after the transfer.
+The repository includes `scripts/rehearse-rollout.mjs` and migration tests. Backup files and verification reports are private local artifacts and must never be committed. The temporary rollout endpoint required a maintenance mode, a 256-bit secret, and an unexpired deadline; it accepted no arbitrary SQL or table names. Its Worker hook was removed after the verified transfer, so the final production build cannot expose those operations.
+
+## Verified outcome
+
+The production transfer completed on September 14, 2026. All application tables exactly matched the expected transformed snapshots, including all 66 shoots, 268 scores, two notes, three users, five per-user class settings, three import batches and 12 import snapshots. Resend accepted the owner-only test message, and OpenAI correctly extracted a synthetic 24/25 score with blank unshot gauges. The release build, TypeScript check and 49 automated tests passed.
