@@ -26,10 +26,12 @@ const vite = await createServer({ appType: "custom", configFile: false, root,
   resolve: { alias: { "@": root } }, cacheDir: ".sites-runtime/test-cache/history", optimizeDeps: { noDiscovery: true }, server: { middlewareMode: true, hmr: false },
   plugins: [{ name: "history-test-runtime", enforce: "pre",
     resolveId(id) {
+      if (id === "@/lib/request-account" || id.endsWith("/lib/request-account")) return "\0history-account";
       if (id === "cloudflare:workers") return "\0test-d1";
       if (id.endsWith("/lib/tracker-data") || id === "@/lib/tracker-data") return "\0test-scores";
     },
     load(id) {
+      if (id === "\0history-account") return 'export async function requestAccount(){ return {id:"history-fixture",email:"fixture@example.test",role:"shooter"}; }';
       if (id === "\0test-d1") return 'export const env = { DB: globalThis.historyTestDB };';
       if (id === "\0test-scores") return 'export const attachScores = globalThis.historyTestScores;';
     },
@@ -59,9 +61,10 @@ const query = async (q = "", page = 1) => {
   return { status: response.status, ...await response.json() };
 };
 function seed() {
+  db.exec("INSERT OR IGNORE INTO users (id,email,display_name,created_at) VALUES ('history-fixture','history@example.test','Fixture',0)");
   db.exec("DELETE FROM event_scores; DELETE FROM shoots;");
   for (let id = 1; id <= 23; id++) {
-    db.prepare("INSERT INTO shoots (id, name, date, status) VALUES (?, ?, ?, 'complete')").run(id, id === 1 ? "North State 100%_ O'Brien\\Open" : `Open ${id}`, id <= 3 ? "2025-01-01" : "2026-01-01");
+    db.prepare("INSERT INTO shoots (id, name, date, status, owner_id) VALUES (?, ?, ?, 'complete', 'history-fixture')").run(id, id === 1 ? "North State 100%_ O'Brien\\Open" : `Open ${id}`, id <= 3 ? "2025-01-01" : "2026-01-01");
     db.prepare("INSERT INTO event_scores (id, shoot_id, event, broken, targets, label, sequence) VALUES (?, ?, '12', 96, 100, 'Main', 0)").run(id, id);
   }
   db.prepare("INSERT INTO event_scores (id, shoot_id, event, broken, targets, label, sequence) VALUES (24, 1, '12', 48, 50, 'Preliminary', 1)").run();

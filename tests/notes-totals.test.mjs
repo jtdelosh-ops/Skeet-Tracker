@@ -4,26 +4,19 @@ import { DatabaseSync } from "node:sqlite";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
+import { d1Adapter } from './helpers/d1.mjs';
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const db = new DatabaseSync(":memory:");
 db.exec("PRAGMA foreign_keys=ON");
 for (const name of readdirSync(`${root}/drizzle`).filter((n) => n.endsWith('.sql')).sort()) db.exec(readFileSync(`${root}/drizzle/${name}`, 'utf8'));
-globalThis.notesTestDB = { prepare(sql) {
-  let values = [];
-  return {
-    bind(...args) { values = args; return this; },
-    async run() { db.prepare(sql).run(...values); return { success: true }; },
-    async all() { return { results: db.prepare(sql).all(...values) }; },
-    async first() { return db.prepare(sql).get(...values); },
-    async raw() { return db.prepare(sql).all(...values).map((r) => Object.values(r)); },
-  };
-} };
+globalThis.notesTestDB = d1Adapter(db);
+db.exec("INSERT INTO users (id,email,display_name,created_at) VALUES ('notes-fixture','fixture@example.test','Fixture',0)");
 const vite = await createServer({ configFile: false, appType: 'custom', root,
   resolve: { alias: { '@': root } }, optimizeDeps: { noDiscovery: true }, cacheDir: '.sites-runtime/test-cache/notes',
   server: { middlewareMode: true, hmr: false },
-  plugins: [{ name: 'notes-d1', resolveId(id) { if (id === 'cloudflare:workers') return '\0notes-d1'; },
-    load(id) { if (id === '\0notes-d1') return 'export const env = {DB: globalThis.notesTestDB}'; } }],
+  plugins: [{ name: 'notes-d1', enforce: 'pre', resolveId(id) { if (id === '@/lib/request-account' || id.endsWith('/lib/request-account')) return '\0notes-account'; if (id === 'cloudflare:workers') return '\0notes-d1'; },
+    load(id) { if (id === '\0notes-account') return 'export async function requestAccount(){return {id:"notes-fixture",role:"shooter"};}'; if (id === '\0notes-d1') return 'export const env = {DB: globalThis.notesTestDB}'; } }],
 });
 after(async () => { await vite.close(); db.close(); delete globalThis.notesTestDB; });
 const routes = await vite.ssrLoadModule('/app/api/shoots/route.ts');

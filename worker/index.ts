@@ -1,8 +1,9 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { authGate, type LoginEnv } from "../lib/login";
 
-interface Env {
+interface Env extends LoginEnv {
   ASSETS: Fetcher;
   DB: D1Database;
   IMAGES: {
@@ -28,6 +29,12 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    try {
+      const denied = await authGate(request, env);
+      if (denied) return denied;
+    } catch {
+      return Response.json({ error: "Sign-in is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    }
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
@@ -40,7 +47,10 @@ const worker = {
       }, allowedWidths);
     }
 
-    return handler.fetch(request, env, ctx);
+    const response = await handler.fetch(request, env, ctx);
+    const secured = new Response(response.body, response);
+    secured.headers.set("Cache-Control", "no-store");
+    return secured;
   },
 };
 

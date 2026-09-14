@@ -1,6 +1,6 @@
-import { asc, inArray } from "drizzle-orm";
+import { asc, inArray, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { shoots, eventScores, classSettings } from "@/db/schema";
+import { shoots, eventScores, userClassSettings } from "@/db/schema";
 import { calculateStats } from "@/lib/scoring";
 import type { Shoot, StartingClasses } from "@/lib/scoring";
 import { attachNotes } from "@/lib/shoot-notes";
@@ -13,14 +13,14 @@ export async function attachScores(rows: (typeof shoots.$inferSelect)[]): Promis
   return attachNotes(rows.map((row) => ({ ...row, scores: scores.filter((score) => score.shootId === row.id) })));
 }
 
-export async function dashboardData() {
+export async function dashboardData(ownerId: string) {
   const db = getDb();
   // All scoring happens on the server using the same pure calculations as before.
   // Only five active scores per gauge and current active shoots reach the browser.
   const [rows, scores, settings] = await Promise.all([
-    db.select().from(shoots).orderBy(asc(shoots.date), asc(shoots.id)),
-    db.select().from(eventScores).orderBy(asc(eventScores.sequence), asc(eventScores.id)),
-    db.select().from(classSettings),
+    db.select().from(shoots).where(eq(shoots.ownerId,ownerId)).orderBy(asc(shoots.date), asc(shoots.id)),
+    db.select({id:eventScores.id,shootId:eventScores.shootId,event:eventScores.event,broken:eventScores.broken,targets:eventScores.targets,classShot:eventScores.classShot,shotDate:eventScores.shotDate,sequence:eventScores.sequence,label:eventScores.label}).from(eventScores).innerJoin(shoots,eq(eventScores.shootId,shoots.id)).where(eq(shoots.ownerId,ownerId)).orderBy(asc(eventScores.sequence), asc(eventScores.id)),
+    db.select().from(userClassSettings).where(eq(userClassSettings.userId,ownerId)),
   ]);
   const grouped = new Map<number, typeof scores>();
   for (const score of scores) {

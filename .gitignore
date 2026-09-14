@@ -41,3 +41,5 @@ next-env.d.ts
 /outputs/
 /work/
 *.tsbuildinfo
+/RESEND_API_KEY.txt
+/.dev.vars*
