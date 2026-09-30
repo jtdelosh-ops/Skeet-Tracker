@@ -15,7 +15,9 @@ export default function Login() {
   const [inviteReady,setInviteReady]=useState(false);
   const [loadingInvite,setLoadingInvite]=useState(false);
   const [showForm,setShowForm]=useState(false);
+  const [showTop,setShowTop]=useState(false);
   useEffect(()=>{const value=new URLSearchParams(window.location.hash.slice(1)).get("invite");if(!value)return;setShowForm(true);setSignup(true);setInviteCode(value);setLoadingInvite(true);window.history.replaceState(null,"","/login");void fetch("/api/auth/invitation",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({inviteCode:value})}).then(async response=>{const data=await response.json() as {email:string;error?:string};if(!response.ok)throw Error(data.error||"Unable to open this invitation.");setEmail(data.email);setInviteReady(true);}).catch(error=>setMessage(error instanceof Error?error.message:"Unable to open this invitation. Reopen the link to retry.")).finally(()=>setLoadingInvite(false));},[]);
+  useEffect(()=>{const update=()=>setShowTop(window.scrollY>280);update();window.addEventListener("scroll",update,{passive:true});return()=>window.removeEventListener("scroll",update);},[]);
   async function submit(verify:boolean) {
     setBusy(true); setMessage("");
     try {
@@ -28,6 +30,7 @@ export default function Login() {
     finally {setBusy(false);}
   }
   if(!showForm) return <main className="skeet-entry">
+    {showTop&&<button className="entry-top-link" type="button" onClick={()=>{window.history.replaceState(null,"","/login");window.scrollTo({top:0,behavior:"smooth"});}}>↑ Back to top</button>}
     <nav className="entry-nav" aria-label="Skeet Tracker"><a className="entry-wordmark" href="/login" aria-label="Skeet Tracker home"><img src="/skeet-tracker-logo.png" alt="Skeet Tracker" /></a><span>BY JAMES DELOSH</span></nav>
     <section className="entry-hero" aria-labelledby="entry-title">
       <div className="entry-copy"><p className="entry-kicker">BUILT FOR THE WAY YOU SHOOT</p><h1 id="entry-title">Every round.<br/><em>In context.</em></h1><p className="entry-lede">A clearer view of your registered skeet scores, classifications, and progress, all in one place.</p>
