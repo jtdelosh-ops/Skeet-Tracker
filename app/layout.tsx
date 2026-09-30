@@ -20,7 +20,7 @@ export default function RootLayout({
         </aside>}
         <AccountStatus />
         {children}
-        <form action="/api/auth/logout" method="post" style={{textAlign:"center",padding:16}}><button type="submit">Sign out of tracker</button></form>
+        <form className="site-signout" action="/api/auth/logout" method="post" style={{textAlign:"center",padding:16}}><button type="submit">Sign out of tracker</button></form>
       </body>
     </html>
   );
